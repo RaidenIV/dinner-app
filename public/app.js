@@ -852,7 +852,7 @@ async function renderSettings() {
       <article class="card">
         <h3>Household</h3>
         <p class="muted">Share this invite code with your wife or anyone else you want in the meal planner.</p>
-        <div class="kpi">${escapeHtml(data.household.inviteCode)}</div>
+        <div class="kpi invite-code" aria-label="Household invite code">${escapeHtml(data.household.inviteCode)}</div>
         <p>${escapeHtml(data.household.name)}</p>
       </article>
       <article class="card">
@@ -869,7 +869,7 @@ async function renderSettings() {
       <article class="card">
         <h3>Appearance</h3>
         <p class="muted">Switch between light and dark mode for the app shell.</p>
-        <div class="theme-toggle" role="group" aria-label="Theme options">
+        <div class="theme-toggle" role="group" aria-label="Theme options" data-theme-toggle-state="${activeTheme}">
           <button class="theme-option ${activeTheme === 'light' ? 'active' : ''}" type="button" data-theme-option="light">Light</button>
           <button class="theme-option ${activeTheme === 'dark' ? 'active' : ''}" type="button" data-theme-option="dark">Dark</button>
         </div>
@@ -927,6 +927,8 @@ async function renderSettings() {
       if (!['light', 'dark'].includes(theme)) return;
       localStorage.setItem('mealPlannerTheme', theme);
       applyTheme(theme);
+      const themeToggle = pageRoot.querySelector('.theme-toggle');
+      if (themeToggle) themeToggle.dataset.themeToggleState = theme;
       pageRoot.querySelectorAll('[data-theme-option]').forEach(item => item.classList.toggle('active', item.dataset.themeOption === theme));
       showToast(`${titleCase(theme)} mode enabled.`);
       requestAnimationFrame(updateActiveNavHover);
@@ -1326,7 +1328,12 @@ function updateActiveNavHover() {
 
 function showToast(message) {
   toast.textContent = message;
-  toast.classList.remove('hidden');
   window.clearTimeout(showToast.timeout);
-  showToast.timeout = window.setTimeout(() => toast.classList.add('hidden'), 3200);
+  window.clearTimeout(showToast.hideTimeout);
+  toast.classList.remove('hidden');
+  requestAnimationFrame(() => toast.classList.add('show'));
+  showToast.timeout = window.setTimeout(() => {
+    toast.classList.remove('show');
+    showToast.hideTimeout = window.setTimeout(() => toast.classList.add('hidden'), 220);
+  }, 3200);
 }
