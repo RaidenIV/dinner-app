@@ -305,6 +305,10 @@ textarea:focus {
   gap: 13px;
 }
 
+.app-shell[data-page="planner"] .content-panel {
+  width: min(1600px, 100%);
+}
+
 .topbar,
 .toolbar {
   display: flex;
@@ -643,19 +647,18 @@ textarea:focus {
 
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(180px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 10px;
-  scrollbar-gutter: stable;
+  overflow-x: visible;
 }
 
 .calendar-day {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   align-content: start;
   gap: 10px;
-  min-width: 180px;
-  min-height: 320px;
+  min-width: 0;
+  aspect-ratio: 4 / 5;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -723,7 +726,11 @@ textarea:focus {
 
 .calendar-meals {
   display: grid;
+  align-content: start;
   gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .calendar-meal {
@@ -987,8 +994,12 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .app-shell[data-page="planner"] .content-panel {
+    width: min(1500px, 100%);
+  }
+
   .calendar-grid {
-    grid-template-columns: repeat(7, minmax(170px, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 

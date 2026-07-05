@@ -8,7 +8,7 @@ const state = {
   token: localStorage.getItem('mealPlannerToken') || '',
   user: null,
   household: null,
-  page: 'dashboard',
+  page: 'planner',
   weekStart: startOfWeek(new Date()),
   recipes: [],
   restaurants: [],
@@ -115,6 +115,7 @@ async function bootApp() {
   $('#household-name').textContent = me.household?.name || 'Meal Planner';
   authScreen.classList.add('hidden');
   appShell.classList.remove('hidden');
+  setActiveNav(state.page);
   requestAnimationFrame(() => updateActiveNavHover());
   await loadBaseData();
   await renderCurrentPage();
@@ -133,6 +134,7 @@ async function loadBaseData() {
 }
 
 async function renderCurrentPage() {
+  appShell.dataset.page = state.page;
   $('#page-title').textContent = titleCase(state.page === 'grocery' ? 'Grocery List' : state.page);
   if (state.page === 'dashboard') return renderDashboard();
   if (state.page === 'planner') return renderPlanner();
@@ -145,6 +147,7 @@ async function renderCurrentPage() {
 }
 
 function setActiveNav(page) {
+  appShell.dataset.page = page;
   document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === page));
   $('#page-title').textContent = titleCase(page === 'grocery' ? 'Grocery List' : page);
   requestAnimationFrame(() => updateActiveNavHover());
