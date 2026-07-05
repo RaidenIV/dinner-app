@@ -1,0 +1,843 @@
+const mealTypes = ['breakfast', 'lunch', 'dinner'];
+const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const fullDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+const state = {
+  token: localStorage.getItem('mealPlannerToken') || '',
+  user: null,
+  household: null,
+  page: 'dashboard',
+  weekStart: startOfWeek(new Date()),
+  recipes: [],
+  restaurants: [],
+  planner: { dates: [], plans: [] },
+  grocery: [],
+  history: [],
+  stats: null,
+  suggestions: []
+};
+
+const $ = selector => document.querySelector(selector);
+const pageRoot = $('#page-root');
+const toast = $('#toast');
+const authScreen = $('#auth-screen');
+const appShell = $('#app-shell');
+
+init();
+
+function init() {
+  $('#today-label').textContent = fullDateFormatter.format(new Date());
+  bindAuth();
+  bindShell();
+
+  if (state.token) {
+    bootApp().catch(() => logout());
+  }
+}
+
+function bindAuth() {
+  document.querySelectorAll('[data-auth-tab]').forEach(button => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('[data-auth-tab]').forEach(tab => tab.classList.remove('active'));
+      button.classList.add('active');
+      const mode = button.dataset.authTab;
+      $('#login-form').classList.toggle('hidden', mode !== 'login');
+      $('#signup-form').classList.toggle('hidden', mode !== 'signup');
+      $('#auth-error').textContent = '';
+    });
+  });
+
+  $('#login-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    $('#auth-error').textContent = '';
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      const result = await api('/api/auth/login', { method: 'POST', body: data, auth: false });
+      setSession(result);
+      await bootApp();
+    } catch (error) {
+      $('#auth-error').textContent = error.message;
+    }
+  });
+
+  $('#signup-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    $('#auth-error').textContent = '';
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    if (!data.inviteCode) delete data.inviteCode;
+    try {
+      const result = await api('/api/auth/signup', { method: 'POST', body: data, auth: false });
+      setSession(result);
+      await bootApp();
+    } catch (error) {
+      $('#auth-error').textContent = error.message;
+    }
+  });
+}
+
+function bindShell() {
+  $('#logout-btn').addEventListener('click', logout);
+
+  document.querySelectorAll('[data-page]').forEach(button => {
+    button.addEventListener('click', async () => {
+      state.page = button.dataset.page;
+      document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
+      await renderCurrentPage();
+    });
+  });
+
+  $('#quick-suggest-btn').addEventListener('click', async () => {
+    state.page = 'dashboard';
+    setActiveNav('dashboard');
+    await loadSuggestions({ mealType: 'dinner' });
+    renderDashboard();
+    showToast('Dinner suggestions refreshed.');
+  });
+
+  $('#quick-random-btn').addEventListener('click', async () => {
+    state.page = 'restaurants';
+    setActiveNav('restaurants');
+    await loadRestaurants();
+    renderRestaurants();
+    setTimeout(() => $('#random-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  });
+}
+
+async function bootApp() {
+  const me = await api('/api/me');
+  state.user = me.user;
+  state.household = me.household;
+  $('#household-name').textContent = me.household?.name || 'Meal Planner';
+  authScreen.classList.add('hidden');
+  appShell.classList.remove('hidden');
+  await loadBaseData();
+  await renderCurrentPage();
+}
+
+async function loadBaseData() {
+  await Promise.all([
+    loadRecipes(),
+    loadRestaurants(),
+    loadPlanner(),
+    loadGrocery(),
+    loadHistory(),
+    loadStats(),
+    loadSuggestions({ mealType: 'dinner' })
+  ]);
+}
+
+async function renderCurrentPage() {
+  $('#page-title').textContent = titleCase(state.page === 'grocery' ? 'Grocery List' : state.page);
+  if (state.page === 'dashboard') return renderDashboard();
+  if (state.page === 'planner') return renderPlanner();
+  if (state.page === 'recipes') return renderRecipes();
+  if (state.page === 'restaurants') return renderRestaurants();
+  if (state.page === 'grocery') return renderGrocery();
+  if (state.page === 'history') return renderHistory();
+  if (state.page === 'stats') return renderStats();
+  if (state.page === 'settings') return renderSettings();
+}
+
+function setActiveNav(page) {
+  document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === page));
+  $('#page-title').textContent = titleCase(page === 'grocery' ? 'Grocery List' : page);
+}
+
+function setSession(result) {
+  state.token = result.token;
+  state.user = result.user;
+  state.household = result.household;
+  localStorage.setItem('mealPlannerToken', result.token);
+}
+
+function logout() {
+  state.token = '';
+  state.user = null;
+  state.household = null;
+  localStorage.removeItem('mealPlannerToken');
+  authScreen.classList.remove('hidden');
+  appShell.classList.add('hidden');
+}
+
+async function api(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (options.auth !== false && state.token) headers.Authorization = `Bearer ${state.token}`;
+
+  const response = await fetch(path, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Request failed: ${response.status}`);
+  return data;
+}
+
+async function loadRecipes() {
+  state.recipes = await api('/api/recipes');
+}
+
+async function loadRestaurants() {
+  state.restaurants = await api('/api/restaurants');
+}
+
+async function loadPlanner() {
+  state.planner = await api(`/api/planner?weekStart=${state.weekStart}`);
+}
+
+async function loadGrocery() {
+  state.grocery = await api('/api/grocery');
+}
+
+async function loadHistory() {
+  state.history = await api('/api/history');
+}
+
+async function loadStats() {
+  state.stats = await api('/api/stats');
+}
+
+async function loadSuggestions(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  state.suggestions = await api(`/api/suggestions${query ? `?${query}` : ''}`);
+}
+
+function renderDashboard() {
+  const today = dateISO(new Date());
+  const todayPlans = state.planner.plans.filter(plan => plan.date === today);
+  const stats = state.stats?.totals || {};
+
+  pageRoot.innerHTML = `
+    <section class="grid three">
+      ${kpiCard('Meals Planned', stats.planned || 0, `${stats.eaten || 0} eaten`)}
+      ${kpiCard('Open Groceries', stats.groceryOpen || 0, `${stats.groceryTotal || 0} total items`)}
+      ${kpiCard('Completion', `${stats.planningCompletion || 0}%`, 'planned meals eaten')}
+    </section>
+
+    <section class="grid two">
+      <article class="card">
+        <h3>Today</h3>
+        <div class="list">
+          ${todayPlans.length ? todayPlans.map(plan => mealPlanSummary(plan)).join('') : '<div class="empty">No meals planned for today yet.</div>'}
+        </div>
+      </article>
+      <article class="card">
+        <h3>Dinner Suggestions</h3>
+        <div class="list">
+          ${state.suggestions.length ? state.suggestions.slice(0, 5).map(item => suggestionItem(item)).join('') : '<div class="empty">Add recipes or restaurants to unlock suggestions.</div>'}
+        </div>
+      </article>
+    </section>
+
+    <section class="grid two">
+      <article class="card">
+        <h3>Recently Eaten</h3>
+        <div class="list">
+          ${state.history.length ? state.history.slice(0, 5).map(historyItem).join('') : '<div class="empty">Meal history appears here after you mark meals as eaten.</div>'}
+        </div>
+      </article>
+      <article class="card">
+        <h3>Quick Actions</h3>
+        <div class="action-row">
+          <button class="primary" data-go="planner">Plan This Week</button>
+          <button class="secondary" data-go="recipes">Add Recipe</button>
+          <button class="secondary" data-go="restaurants">Add Restaurant</button>
+          <button class="secondary" data-go="grocery">Open Grocery List</button>
+        </div>
+      </article>
+    </section>
+  `;
+
+  pageRoot.querySelectorAll('[data-go]').forEach(button => {
+    button.addEventListener('click', async () => {
+      state.page = button.dataset.go;
+      setActiveNav(state.page);
+      await renderCurrentPage();
+    });
+  });
+}
+
+function renderPlanner() {
+  const plansBySlot = new Map(state.planner.plans.map(plan => [`${plan.date}-${plan.mealType}`, plan]));
+
+  pageRoot.innerHTML = `
+    <section class="form-card planner-toolbar">
+      <div>
+        <h3>Weekly Planner</h3>
+        <p class="muted">Plan breakfast, lunch, and dinner. Mark a meal eaten to save it to history.</p>
+      </div>
+      <div class="toolbar">
+        <button class="secondary" id="prev-week">Previous</button>
+        <button class="ghost" id="this-week">This Week</button>
+        <button class="secondary" id="next-week">Next</button>
+        <button class="primary" id="generate-grocery">Generate Grocery List</button>
+      </div>
+    </section>
+    <section class="week-grid">
+      ${state.planner.dates.map(date => `
+        <div class="day-column">
+          <div class="day-heading">${dayFormatter.format(new Date(`${date}T12:00:00`))}</div>
+          ${mealTypes.map(mealType => plannerSlot(date, mealType, plansBySlot.get(`${date}-${mealType}`))).join('')}
+        </div>
+      `).join('')}
+    </section>
+  `;
+
+  $('#prev-week').addEventListener('click', async () => {
+    state.weekStart = addDays(state.weekStart, -7);
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#next-week').addEventListener('click', async () => {
+    state.weekStart = addDays(state.weekStart, 7);
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#this-week').addEventListener('click', async () => {
+    state.weekStart = startOfWeek(new Date());
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#generate-grocery').addEventListener('click', async () => {
+    const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: state.weekStart } });
+    await loadGrocery();
+    showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
+  });
+
+  pageRoot.querySelectorAll('.slot-form').forEach(form => {
+    form.addEventListener('change', event => {
+      if (event.target.name !== 'sourceType') return;
+      const type = event.target.value;
+      const wrapper = event.currentTarget;
+      wrapper.querySelector('[data-recipe-select]').classList.toggle('hidden', type !== 'recipe');
+      wrapper.querySelector('[data-restaurant-select]').classList.toggle('hidden', type !== 'restaurant');
+      wrapper.querySelector('[data-custom-input]').classList.toggle('hidden', type !== 'custom');
+    });
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(event.currentTarget));
+      const body = {
+        date: data.date,
+        mealType: data.mealType,
+        sourceType: data.sourceType,
+        sourceId: data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null,
+        customName: data.sourceType === 'custom' ? data.customName : '',
+        status: data.status,
+        notes: data.notes
+      };
+      await api('/api/planner/slot', { method: 'PUT', body });
+      await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
+      showToast('Meal slot saved.');
+      renderPlanner();
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-delete-plan]').forEach(button => {
+    button.addEventListener('click', async () => {
+      await api(`/api/planner/${button.dataset.deletePlan}`, { method: 'DELETE' });
+      await loadPlanner();
+      showToast('Meal slot cleared.');
+      renderPlanner();
+    });
+  });
+}
+
+function plannerSlot(date, mealType, plan) {
+  const sourceType = plan?.sourceType || 'custom';
+  const selectedRecipeId = sourceType === 'recipe' ? String(plan?.sourceId || '') : '';
+  const selectedRestaurantId = sourceType === 'restaurant' ? String(plan?.sourceId || '') : '';
+  const title = plan ? getPlanName(plan) : 'Nothing planned';
+
+  return `
+    <article class="slot">
+      <div class="list-title">
+        <div>
+          <h4>${mealType}</h4>
+          <p class="muted">${escapeHtml(title)}</p>
+        </div>
+        ${plan ? `<span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : 'accent'}">${plan.status}</span>` : ''}
+      </div>
+      <form class="slot-form">
+        <input type="hidden" name="date" value="${date}" />
+        <input type="hidden" name="mealType" value="${mealType}" />
+        <select name="sourceType">
+          ${option('custom', 'Custom', sourceType)}
+          ${option('recipe', 'Recipe', sourceType)}
+          ${option('restaurant', 'Restaurant', sourceType)}
+        </select>
+        <select name="recipeId" data-recipe-select class="${sourceType !== 'recipe' ? 'hidden' : ''}">
+          <option value="">Select recipe</option>
+          ${state.recipes.map(recipe => option(recipe._id, recipe.name, selectedRecipeId)).join('')}
+        </select>
+        <select name="restaurantId" data-restaurant-select class="${sourceType !== 'restaurant' ? 'hidden' : ''}">
+          <option value="">Select restaurant</option>
+          ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, selectedRestaurantId)).join('')}
+        </select>
+        <input name="customName" data-custom-input class="${sourceType !== 'custom' ? 'hidden' : ''}" placeholder="Custom meal" value="${escapeAttr(plan?.customName || '')}" />
+        <select name="status">
+          ${option('planned', 'Planned', plan?.status || 'planned')}
+          ${option('eaten', 'Eaten', plan?.status || 'planned')}
+          ${option('skipped', 'Skipped', plan?.status || 'planned')}
+        </select>
+        <textarea name="notes" placeholder="Notes">${escapeHtml(plan?.notes || '')}</textarea>
+        <div class="action-row">
+          <button class="primary" type="submit">Save</button>
+          ${plan ? `<button class="danger" type="button" data-delete-plan="${plan._id}">Clear</button>` : ''}
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+function renderRecipes() {
+  pageRoot.innerHTML = `
+    <section class="grid two">
+      <form id="recipe-form" class="form-card">
+        <h3>Add Recipe</h3>
+        <div class="form-grid">
+          <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
+          <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
+          <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
+          <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
+          <label>Prep Time<input name="prepTime" type="number" min="0" value="10" /></label>
+          <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+          <label>Difficulty<select name="difficulty"><option>easy</option><option>medium</option><option>hard</option></select></label>
+          <label>Rating<select name="rating">${ratingOptions()}</select></label>
+          <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
+          <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
+          <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+        </div>
+        <button class="primary full" type="submit">Save Recipe</button>
+      </form>
+      <article class="card">
+        <h3>Recipe Library</h3>
+        <p class="muted">${state.recipes.length} saved recipe${state.recipes.length === 1 ? '' : 's'}.</p>
+        <div class="list">${state.recipes.length ? state.recipes.map(recipeItem).join('') : '<div class="empty">Add your first recipe to start planning meals.</div>'}</div>
+      </article>
+    </section>
+  `;
+
+  $('#recipe-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const body = formToBody(event.currentTarget);
+    body.favorite = event.currentTarget.favorite.checked;
+    await api('/api/recipes', { method: 'POST', body });
+    event.currentTarget.reset();
+    await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+    showToast('Recipe saved.');
+    renderRecipes();
+  });
+
+  pageRoot.querySelectorAll('[data-delete-recipe]').forEach(button => {
+    button.addEventListener('click', async () => {
+      await api(`/api/recipes/${button.dataset.deleteRecipe}`, { method: 'DELETE' });
+      await Promise.all([loadRecipes(), loadPlanner(), loadStats()]);
+      showToast('Recipe deleted.');
+      renderRecipes();
+    });
+  });
+}
+
+function renderRestaurants() {
+  pageRoot.innerHTML = `
+    <section class="grid two">
+      <form id="restaurant-form" class="form-card">
+        <h3>Add Restaurant</h3>
+        <div class="form-grid">
+          <label>Name<input name="name" required placeholder="Favorite taco spot" /></label>
+          <label>Cuisine<input name="cuisine" placeholder="Mexican, Pizza, Sushi" /></label>
+          <label>Price<select name="priceLevel"><option>$</option><option selected>$$</option><option>$$$</option><option>$$$$</option></select></label>
+          <label>Rating<select name="rating">${ratingOptions()}</select></label>
+          <label class="wide">Location or Link<input name="location" placeholder="Address, Google Maps, DoorDash link" /></label>
+          <label>Favorite Dishes<input name="favoriteDishes" placeholder="wings, tacos, ramen" /></label>
+          <label>Tags<input name="tags" placeholder="late night, cheap, delivery" /></label>
+          <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+        </div>
+        <button class="primary full" type="submit">Save Restaurant</button>
+      </form>
+      <article class="card" id="random-form">
+        <h3>Random Restaurant Selector</h3>
+        <p class="muted">Pick a food mood and let the app choose from your saved spots.</p>
+        <form id="random-restaurant-form" class="form-grid">
+          <label>Cuisine / Mood<input name="cuisine" placeholder="pizza, Mexican, burgers" /></label>
+          <label>Tag<input name="tag" placeholder="delivery, cheap, date night" /></label>
+          <label>Price<select name="priceLevel"><option value="">Any</option><option>$</option><option>$$</option><option>$$$</option><option>$$$$</option></select></label>
+          <button class="primary" type="submit">Pick One</button>
+        </form>
+        <div id="random-result" class="list"></div>
+      </article>
+    </section>
+    <section class="card">
+      <h3>Restaurant List</h3>
+      <div class="list">${state.restaurants.length ? state.restaurants.map(restaurantItem).join('') : '<div class="empty">Add favorite restaurants to use the random selector.</div>'}</div>
+    </section>
+  `;
+
+  $('#restaurant-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const body = formToBody(event.currentTarget);
+    body.favorite = event.currentTarget.favorite.checked;
+    await api('/api/restaurants', { method: 'POST', body });
+    event.currentTarget.reset();
+    await Promise.all([loadRestaurants(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+    showToast('Restaurant saved.');
+    renderRestaurants();
+  });
+
+  $('#random-restaurant-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const values = formToBody(event.currentTarget);
+    const query = new URLSearchParams(Object.fromEntries(Object.entries(values).filter(([, value]) => value))).toString();
+    try {
+      const result = await api(`/api/restaurants/random${query ? `?${query}` : ''}`);
+      $('#random-result').innerHTML = `<div class="list-item"><strong>${escapeHtml(result.pick.name)}</strong><p class="muted">${escapeHtml(result.pick.cuisine || 'Any cuisine')} • ${result.pick.priceLevel} • ${result.pick.rating || 0}/5</p><p>${escapeHtml((result.pick.tags || []).join(', ') || 'No tags yet')}</p></div>`;
+    } catch (error) {
+      $('#random-result').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    }
+  });
+
+  pageRoot.querySelectorAll('[data-delete-restaurant]').forEach(button => {
+    button.addEventListener('click', async () => {
+      await api(`/api/restaurants/${button.dataset.deleteRestaurant}`, { method: 'DELETE' });
+      await Promise.all([loadRestaurants(), loadPlanner(), loadStats()]);
+      showToast('Restaurant deleted.');
+      renderRestaurants();
+    });
+  });
+}
+
+function renderGrocery() {
+  const grouped = groupBy(state.grocery, item => item.category || 'Other');
+
+  pageRoot.innerHTML = `
+    <section class="grid two">
+      <form id="grocery-form" class="form-card">
+        <h3>Add Grocery Item</h3>
+        <div class="form-grid">
+          <label>Name<input name="name" required placeholder="Chicken thighs" /></label>
+          <label>Category<input name="category" placeholder="Meat, Produce, Pantry" /></label>
+          <label>Quantity<input name="quantity" placeholder="2" /></label>
+          <label>Unit<input name="unit" placeholder="lb, bag, box" /></label>
+        </div>
+        <button class="primary full" type="submit">Add Item</button>
+      </form>
+      <article class="card">
+        <h3>Grocery Controls</h3>
+        <div class="action-row">
+          <button class="secondary" id="generate-grocery-here">Generate From This Week</button>
+          <button class="danger" id="clear-checked">Clear Checked</button>
+        </div>
+      </article>
+    </section>
+    <section class="card">
+      <h3>Shared Grocery List</h3>
+      <div class="list">
+        ${state.grocery.length ? Object.entries(grouped).map(([category, items]) => groceryGroup(category, items)).join('') : '<div class="empty">No grocery items yet.</div>'}
+      </div>
+    </section>
+  `;
+
+  $('#grocery-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    await api('/api/grocery', { method: 'POST', body: formToBody(event.currentTarget) });
+    event.currentTarget.reset();
+    await Promise.all([loadGrocery(), loadStats()]);
+    showToast('Grocery item added.');
+    renderGrocery();
+  });
+
+  $('#generate-grocery-here').addEventListener('click', async () => {
+    const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: state.weekStart } });
+    await Promise.all([loadGrocery(), loadStats()]);
+    showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
+    renderGrocery();
+  });
+
+  $('#clear-checked').addEventListener('click', async () => {
+    const result = await api('/api/grocery/clear-checked', { method: 'POST', body: {} });
+    await Promise.all([loadGrocery(), loadStats()]);
+    showToast(`Cleared ${result.deleted} checked item${result.deleted === 1 ? '' : 's'}.`);
+    renderGrocery();
+  });
+
+  pageRoot.querySelectorAll('[data-check-grocery]').forEach(input => {
+    input.addEventListener('change', async () => {
+      const item = state.grocery.find(entry => entry._id === input.dataset.checkGrocery);
+      if (!item) return;
+      await api(`/api/grocery/${item._id}`, { method: 'PUT', body: { ...item, checked: input.checked } });
+      await Promise.all([loadGrocery(), loadStats()]);
+      renderGrocery();
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-delete-grocery]').forEach(button => {
+    button.addEventListener('click', async () => {
+      await api(`/api/grocery/${button.dataset.deleteGrocery}`, { method: 'DELETE' });
+      await Promise.all([loadGrocery(), loadStats()]);
+      showToast('Grocery item deleted.');
+      renderGrocery();
+    });
+  });
+}
+
+function renderHistory() {
+  pageRoot.innerHTML = `
+    <section class="grid two">
+      <form id="history-form" class="form-card">
+        <h3>Add Meal History</h3>
+        <div class="form-grid">
+          <label>Date<input name="date" type="date" value="${dateISO(new Date())}" required /></label>
+          <label>Meal Type<select name="mealType">${mealTypes.map(type => option(type, titleCase(type), 'dinner')).join('')}</select></label>
+          <label>Name<input name="name" required placeholder="Chicken pasta" /></label>
+          <label>Cuisine<input name="cuisine" placeholder="Italian" /></label>
+          <label>Rating<select name="rating">${ratingOptions()}</select></label>
+          <label>Cost<input name="cost" type="number" min="0" step="0.01" value="0" /></label>
+          <label class="wide">Notes<textarea name="notes" placeholder="Would make again, needs more spice, etc."></textarea></label>
+        </div>
+        <button class="primary full" type="submit">Save History</button>
+      </form>
+      <article class="card">
+        <h3>Meal History</h3>
+        <div class="list">${state.history.length ? state.history.map(historyItem).join('') : '<div class="empty">History is saved when meals are eaten or added manually.</div>'}</div>
+      </article>
+    </section>
+  `;
+
+  $('#history-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const body = { ...formToBody(event.currentTarget), sourceType: 'custom' };
+    await api('/api/history', { method: 'POST', body });
+    event.currentTarget.reset();
+    await Promise.all([loadHistory(), loadStats(), loadSuggestions({ mealType: 'dinner' })]);
+    showToast('Meal history saved.');
+    renderHistory();
+  });
+
+  pageRoot.querySelectorAll('[data-delete-history]').forEach(button => {
+    button.addEventListener('click', async () => {
+      await api(`/api/history/${button.dataset.deleteHistory}`, { method: 'DELETE' });
+      await Promise.all([loadHistory(), loadStats()]);
+      showToast('History item deleted.');
+      renderHistory();
+    });
+  });
+}
+
+function renderStats() {
+  const stats = state.stats || { totals: {}, cuisineCounts: {}, mealTypeCounts: {}, topRecipes: [], topRestaurants: [] };
+  const cuisineMax = Math.max(1, ...Object.values(stats.cuisineCounts || {}));
+  const mealMax = Math.max(1, ...Object.values(stats.mealTypeCounts || {}));
+
+  pageRoot.innerHTML = `
+    <section class="grid three">
+      ${kpiCard('Recipes', stats.totals.recipes || 0, 'saved')}
+      ${kpiCard('Restaurants', stats.totals.restaurants || 0, 'saved')}
+      ${kpiCard('Home vs Out', `${stats.totals.homeCooked || 0}/${stats.totals.restaurantMeals || 0}`, 'recipe meals / restaurant meals')}
+    </section>
+    <section class="grid two">
+      <article class="card">
+        <h3>Cuisine Breakdown</h3>
+        <div class="chart-row">
+          ${Object.entries(stats.cuisineCounts || {}).length ? Object.entries(stats.cuisineCounts).map(([name, count]) => statBar(name, count, cuisineMax)).join('') : '<div class="empty">No cuisine data yet.</div>'}
+        </div>
+      </article>
+      <article class="card">
+        <h3>Meal Type Breakdown</h3>
+        <div class="chart-row">
+          ${Object.entries(stats.mealTypeCounts || {}).length ? Object.entries(stats.mealTypeCounts).map(([name, count]) => statBar(titleCase(name), count, mealMax)).join('') : '<div class="empty">No meal type data yet.</div>'}
+        </div>
+      </article>
+    </section>
+    <section class="grid two">
+      <article class="card">
+        <h3>Most Cooked Recipes</h3>
+        <div class="list">${stats.topRecipes?.length ? stats.topRecipes.map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="muted">${item.timesCooked} cooked • ${item.rating}/5</span></div>`).join('') : '<div class="empty">Cook recipe meals to populate this.</div>'}</div>
+      </article>
+      <article class="card">
+        <h3>Most Visited Restaurants</h3>
+        <div class="list">${stats.topRestaurants?.length ? stats.topRestaurants.map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="muted">${item.timesVisited} visits • ${item.rating}/5</span></div>`).join('') : '<div class="empty">Mark restaurant meals eaten to populate this.</div>'}</div>
+      </article>
+    </section>
+  `;
+}
+
+async function renderSettings() {
+  const data = await api('/api/household');
+  pageRoot.innerHTML = `
+    <section class="grid two">
+      <article class="card">
+        <h3>Household</h3>
+        <p class="muted">Share this invite code with your wife or anyone else you want in the meal planner.</p>
+        <div class="kpi">${escapeHtml(data.household.inviteCode)}</div>
+        <p>${escapeHtml(data.household.name)}</p>
+      </article>
+      <article class="card">
+        <h3>Members</h3>
+        <div class="list">
+          ${data.members.map(member => `<div class="list-item"><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div>`).join('')}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function kpiCard(label, value, subtext) {
+  return `<article class="stat-card"><h3>${escapeHtml(label)}</h3><div class="kpi">${escapeHtml(value)} <small>${escapeHtml(subtext)}</small></div></article>`;
+}
+
+function mealPlanSummary(plan) {
+  return `<div class="list-item"><div class="list-title"><strong>${titleCase(plan.mealType)}</strong><span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : 'accent'}">${plan.status}</span></div><p>${escapeHtml(getPlanName(plan))}</p>${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}</div>`;
+}
+
+function suggestionItem(item) {
+  return `<div class="list-item"><div class="list-title"><strong>${escapeHtml(item.name)}</strong><span class="badge accent">${item.type}</span></div><p class="muted">${escapeHtml(item.cuisine || 'Any cuisine')} • ${item.rating || 0}/5</p><p>${escapeHtml(item.reason)}</p></div>`;
+}
+
+function recipeItem(recipe) {
+  return `
+    <div class="list-item">
+      <div class="list-title">
+        <strong>${escapeHtml(recipe.name)}</strong>
+        <button class="danger small-btn" data-delete-recipe="${recipe._id}">Delete</button>
+      </div>
+      <div class="badge-row">
+        ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
+        ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
+        ${recipe.favorite ? '<span class="badge good">favorite</span>' : ''}
+      </div>
+      <p class="muted">${recipe.prepTime || 0}m prep • ${recipe.cookTime || 0}m cook • ${recipe.rating || 0}/5 • cooked ${recipe.timesCooked || 0}x</p>
+      ${(recipe.ingredients || []).length ? `<p>${recipe.ingredients.slice(0, 4).map(item => escapeHtml(item.name)).join(', ')}${recipe.ingredients.length > 4 ? '…' : ''}</p>` : ''}
+    </div>
+  `;
+}
+
+function restaurantItem(restaurant) {
+  return `
+    <div class="list-item">
+      <div class="list-title">
+        <strong>${escapeHtml(restaurant.name)}</strong>
+        <button class="danger small-btn" data-delete-restaurant="${restaurant._id}">Delete</button>
+      </div>
+      <div class="badge-row">
+        ${restaurant.cuisine ? `<span class="badge accent">${escapeHtml(restaurant.cuisine)}</span>` : ''}
+        <span class="badge">${restaurant.priceLevel}</span>
+        ${restaurant.favorite ? '<span class="badge good">favorite</span>' : ''}
+      </div>
+      <p class="muted">${restaurant.rating || 0}/5 • visited ${restaurant.timesVisited || 0}x</p>
+      ${restaurant.location ? `<p>${escapeHtml(restaurant.location)}</p>` : ''}
+    </div>
+  `;
+}
+
+function groceryGroup(category, items) {
+  return `
+    <div class="list-item">
+      <h3>${escapeHtml(category)}</h3>
+      <div class="list">
+        ${items.map(item => `
+          <div class="grocery-item ${item.checked ? 'checked' : ''}">
+            <input type="checkbox" data-check-grocery="${item._id}" ${item.checked ? 'checked' : ''} />
+            <div>
+              <strong class="grocery-name">${escapeHtml(item.name)}</strong>
+              <p class="muted">${escapeHtml([item.quantity, item.unit].filter(Boolean).join(' ') || 'No quantity')}</p>
+            </div>
+            <button class="danger small-btn" data-delete-grocery="${item._id}">Delete</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function historyItem(item) {
+  return `
+    <div class="list-item">
+      <div class="list-title">
+        <strong>${escapeHtml(item.name)}</strong>
+        ${state.page === 'history' ? `<button class="danger small-btn" data-delete-history="${item._id}">Delete</button>` : `<span class="badge">${item.date}</span>`}
+      </div>
+      <div class="badge-row">
+        <span class="badge accent">${escapeHtml(item.mealType)}</span>
+        <span class="badge">${escapeHtml(item.sourceType)}</span>
+        ${item.cuisine ? `<span class="badge">${escapeHtml(item.cuisine)}</span>` : ''}
+      </div>
+      <p class="muted">${item.date} • ${item.rating || 0}/5${item.cost ? ` • $${Number(item.cost).toFixed(2)}` : ''}</p>
+      ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ''}
+    </div>
+  `;
+}
+
+function statBar(name, count, max) {
+  const width = Math.max(4, Math.round((count / max) * 100));
+  return `<div><div class="list-title"><strong>${escapeHtml(name)}</strong><span class="muted">${count}</span></div><div class="bar"><span style="--w:${width}%"></span></div></div>`;
+}
+
+function option(value, label, selected) {
+  return `<option value="${escapeAttr(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+}
+
+function ratingOptions() {
+  return [0, 1, 2, 3, 4, 5].map(value => option(value, `${value}/5`, 0)).join('');
+}
+
+function formToBody(form) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function groupBy(items, getter) {
+  return items.reduce((groups, item) => {
+    const key = getter(item);
+    groups[key] ||= [];
+    groups[key].push(item);
+    return groups;
+  }, {});
+}
+
+function getPlanName(plan) {
+  if (!plan) return '';
+  if (plan.sourceType === 'recipe') return state.recipes.find(recipe => String(recipe._id) === String(plan.sourceId))?.name || plan.customName || 'Recipe';
+  if (plan.sourceType === 'restaurant') return state.restaurants.find(restaurant => String(restaurant._id) === String(plan.sourceId))?.name || plan.customName || 'Restaurant';
+  return plan.customName || 'Custom meal';
+}
+
+function titleCase(value) {
+  return String(value || '').replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function dateISO(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function startOfWeek(date) {
+  const copy = new Date(date);
+  const day = copy.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  copy.setDate(copy.getDate() + diff);
+  return dateISO(copy);
+}
+
+function addDays(isoDate, days) {
+  const date = new Date(`${isoDate}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return dateISO(date);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/'/g, '&#39;');
+}
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.remove('hidden');
+  window.clearTimeout(showToast.timeout);
+  showToast.timeout = window.setTimeout(() => toast.classList.add('hidden'), 3200);
+}
