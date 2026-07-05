@@ -455,6 +455,43 @@ app.get('/api/household', authenticate, async (req, res) => {
   res.json({ household, members, invites: invites.map(publicInvite) });
 });
 
+app.get('/api/export/user-data', authenticate, async (req, res) => {
+  try {
+    const [household, members, invites, recipes, restaurants, plannerMeals, groceryItems, mealHistory] = await Promise.all([
+      Household.findById(req.householdId).lean(),
+      User.find({ householdId: req.householdId })
+        .select('name email role profilePic createdAt updatedAt')
+        .sort({ createdAt: 1 })
+        .lean(),
+      HouseholdInvite.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
+      Recipe.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
+      Restaurant.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
+      MealPlan.find({ householdId: req.householdId }).sort({ date: 1, mealType: 1 }).lean(),
+      GroceryItem.find({ householdId: req.householdId }).sort({ checked: 1, category: 1, name: 1 }).lean(),
+      MealHistory.find({ householdId: req.householdId }).sort({ date: -1, createdAt: -1 }).lean()
+    ]);
+
+    if (!household) return res.status(404).json({ error: 'Household not found.' });
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      exportType: 'homeplate-user-data',
+      version: 1,
+      account: publicUser(req.user),
+      household,
+      members,
+      invites: invites.map(publicInvite),
+      recipes,
+      restaurants,
+      plannerMeals,
+      groceryItems,
+      mealHistory
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to export user data.' });
+  }
+});
+
 app.post('/api/household/invites', authenticate, async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email);

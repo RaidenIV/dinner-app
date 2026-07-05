@@ -89,12 +89,24 @@ button {
   letter-spacing: -0.06em;
 }
 
-.auth-card h1 {
+.auth-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 4px 0 8px;
+}
+
+.auth-card h1 {
+  margin: 0;
   font-size: clamp(2.3rem, 8vw, 4.2rem);
   line-height: 0.92;
   letter-spacing: -0.08em;
   color: var(--brand);
+}
+
+.auth-title-row .homeplate-logo-icon {
+  width: clamp(28px, 7vw, 44px);
+  height: clamp(28px, 7vw, 44px);
 }
 
 .muted,
@@ -215,12 +227,30 @@ textarea:focus {
   flex-shrink: 0;
 }
 
+.topnav-logo-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  color: var(--brand);
+}
+
 .topnav-logo {
   font-size: 26px;
   font-weight: 900;
   letter-spacing: -1px;
   color: var(--brand);
   line-height: 1;
+}
+
+.homeplate-logo-icon {
+  display: inline-block;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  background: var(--brand);
+  -webkit-mask: url('/assets/home.svg') center / contain no-repeat;
+  mask: url('/assets/home.svg') center / contain no-repeat;
 }
 
 .topnav-sub {
@@ -528,6 +558,12 @@ textarea:focus {
 }
 
 .settings-logout-card .logout-btn {
+  width: fit-content;
+  margin-top: 4px;
+}
+
+
+.settings-export-card .secondary {
   width: fit-content;
   margin-top: 4px;
 }
@@ -1784,6 +1820,10 @@ textarea:focus {
   }
 
   .settings-logout-card .logout-btn {
+    width: 100%;
+  }
+
+  .settings-export-card .secondary {
     width: 100%;
   }
 

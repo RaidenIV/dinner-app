@@ -903,6 +903,11 @@ async function renderSettings() {
           ${data.members.map(member => `<div class="list-item member-list-item"><div class="member-identity">${avatarMarkup(member, 'member')}<div><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div></div></div>`).join('')}
         </div>
       </article>
+      <article class="card settings-export-card">
+        <h3>Manual Backup</h3>
+        <p class="muted">Export your account and household data as a JSON backup.</p>
+        <button id="export-user-data-btn" class="secondary" type="button"><i class="ti ti-download"></i>Export User Data</button>
+      </article>
       <article class="card settings-logout-card">
         <h3>Session</h3>
         <p class="muted">Log out of this HomePlate account on this device.</p>
@@ -950,6 +955,8 @@ async function renderSettings() {
   });
 
   pageRoot.querySelector('#settings-logout-btn')?.addEventListener('click', logout);
+
+  pageRoot.querySelector('#export-user-data-btn')?.addEventListener('click', exportUserData);
 
   pageRoot.querySelector('[data-copy-invite]')?.addEventListener('click', async event => {
     const code = event.currentTarget.dataset.copyInvite || '';
@@ -1156,6 +1163,40 @@ function formatInviteCode(value) {
     .split('')
     .map(char => `<span>${escapeHtml(char)}</span>`)
     .join('');
+}
+
+async function exportUserData() {
+  try {
+    const response = await fetch('/api/export/user-data', {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Export failed: ${response.status}`);
+
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const householdName = slugify(data.household?.name || 'homeplate');
+    const date = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `${householdName}-user-data-${date}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('User data exported.');
+  } catch (error) {
+    showToast(error.message || 'Unable to export user data.');
+  }
+}
+
+function slugify(value) {
+  return String(value || 'homeplate')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'homeplate';
 }
 
 function buildInviteMailto(email, householdName, inviteCode) {
