@@ -82,7 +82,7 @@ function bindAuth() {
 }
 
 function bindShell() {
-  $('#logout-btn').addEventListener('click', logout);
+  $('#logout-btn')?.addEventListener('click', logout);
   $('#user-avatar-btn')?.addEventListener('click', async () => {
     state.page = 'settings';
     setActiveNav('settings');
@@ -880,6 +880,11 @@ async function renderSettings() {
           ${data.members.map(member => `<div class="list-item member-list-item"><div class="member-identity">${avatarMarkup(member, 'member')}<div><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div></div></div>`).join('')}
         </div>
       </article>
+      <article class="card settings-logout-card">
+        <h3>Session</h3>
+        <p class="muted">Log out of this HomePlate account on this device.</p>
+        <button id="settings-logout-btn" class="ghost logout-btn" type="button"><i class="ti ti-logout"></i>Log Out</button>
+      </article>
     </section>
   `;
 
@@ -920,6 +925,8 @@ async function renderSettings() {
       requestAnimationFrame(updateActiveNavHover);
     });
   });
+
+  pageRoot.querySelector('#settings-logout-btn')?.addEventListener('click', logout);
 
   pageRoot.querySelectorAll('[data-theme-option]').forEach(button => {
     button.addEventListener('click', () => {

@@ -297,6 +297,30 @@ textarea:focus {
   gap: 8px;
 }
 
+.developer-footer {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.developer-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 6px 13px;
+  border-radius: 9999px;
+  background: var(--brand);
+  border: 1px solid var(--brand-border);
+}
+
+.developer-logo {
+  display: block;
+  width: 88px;
+  max-width: 24vw;
+  height: auto;
+}
+
 .user-pill {
   min-height: 36px;
   padding: 3px 10px 3px 4px;
@@ -503,6 +527,11 @@ textarea:focus {
   background: rgba(229, 62, 62, 0.1);
 }
 
+.settings-logout-card .logout-btn {
+  width: fit-content;
+  margin-top: 4px;
+}
+
 .danger {
   background: rgba(229, 62, 62, 0.08);
   border: 0.5px solid rgba(229, 62, 62, 0.22);
@@ -555,15 +584,6 @@ textarea:focus {
 .form-card,
 .stat-card {
   padding: 16px;
-}
-
-.card:hover,
-.form-card:hover,
-.slot:hover,
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.07);
-  border-color: #d8d8e8;
 }
 
 .card h3,
@@ -1283,10 +1303,6 @@ textarea:focus {
   color: #baffb5;
 }
 
-:root[data-theme="dark"] .card:hover,
-:root[data-theme="dark"] .form-card:hover,
-:root[data-theme="dark"] .slot:hover,
-:root[data-theme="dark"] .stat-card:hover,
 :root[data-theme="dark"] .calendar-day:hover {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   border-color: #3b4252;
@@ -1309,8 +1325,9 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
-  margin-top: 14px;
-  padding: 4px;
+  width: min(172px, 100%);
+  margin-top: 12px;
+  padding: 3px;
   border: 1px solid var(--border);
   border-radius: 9999px;
   background: var(--surface);
@@ -1321,11 +1338,11 @@ textarea:focus {
 .theme-toggle::before {
   content: '';
   position: absolute;
-  inset: 4px auto 4px 4px;
-  width: calc(50% - 4px);
+  inset: 3px auto 3px 3px;
+  width: calc(50% - 3px);
   border-radius: 9999px;
   background: var(--brand);
-  box-shadow: 0 8px 18px var(--brand-border);
+  box-shadow: 0 6px 14px var(--brand-border);
   transform: translateX(0);
   transition:
     transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
@@ -1338,19 +1355,16 @@ textarea:focus {
 }
 
 .theme-option {
-  min-height: 34px;
+  min-height: 28px;
+  padding: 0 12px;
   border-radius: 9999px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   position: relative;
   z-index: 1;
-  transition: transform 0.16s, color 0.22s ease;
-}
-
-.theme-option:hover {
-  transform: translateY(-1px);
+  transition: color 0.22s ease;
 }
 
 .theme-option.active {
@@ -1544,7 +1558,7 @@ textarea:focus {
     display: none;
   }
 
-  .logout-btn {
+  .topnav-right .logout-btn {
     width: auto;
     min-height: 34px;
     padding: 0 10px;
@@ -1755,6 +1769,22 @@ textarea:focus {
   .toast {
     top: 137px;
     font-size: 12px;
+  }
+
+  .theme-toggle {
+    width: 152px;
+  }
+
+  .settings-logout-card .logout-btn {
+    width: 100%;
+  }
+
+  .developer-footer {
+    padding-top: 10px;
+  }
+
+  .developer-logo {
+    width: 76px;
   }
 
   .time-modal-overlay {
