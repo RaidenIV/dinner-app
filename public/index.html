@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HomePlate Planner</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="auth-screen" class="auth-screen">
+      <section class="auth-card">
+        <div class="brand-mark">HP</div>
+        <h1>HomePlate Planner</h1>
+        <p class="muted">A shared meal planner for recipes, restaurants, grocery lists, and weekly decisions.</p>
+
+        <div class="auth-tabs">
+          <button class="tab active" data-auth-tab="login">Log In</button>
+          <button class="tab" data-auth-tab="signup">Sign Up</button>
+        </div>
+
+        <form id="login-form" class="auth-form">
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit" class="primary full">Log In</button>
+        </form>
+
+        <form id="signup-form" class="auth-form hidden">
+          <label>Name<input name="name" type="text" autocomplete="name" required /></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
+          <label>Household Name<input name="householdName" type="text" placeholder="Evans Home" /></label>
+          <label>Invite Code <span class="optional">optional</span><input name="inviteCode" type="text" placeholder="Join an existing household" /></label>
+          <button type="submit" class="primary full">Create Account</button>
+        </form>
+
+        <p id="auth-error" class="error-text" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <main id="app-shell" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="app-logo">
+          <span>HP</span>
+          <div>
+            <strong>HomePlate</strong>
+            <small id="household-name">Meal Planner</small>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="Main navigation">
+          <button class="nav-item active" data-page="dashboard">Dashboard</button>
+          <button class="nav-item" data-page="planner">Planner</button>
+          <button class="nav-item" data-page="recipes">Recipes</button>
+          <button class="nav-item" data-page="restaurants">Restaurants</button>
+          <button class="nav-item" data-page="grocery">Grocery List</button>
+          <button class="nav-item" data-page="history">History</button>
+          <button class="nav-item" data-page="stats">Stats</button>
+          <button class="nav-item" data-page="settings">Settings</button>
+        </nav>
+        <button id="logout-btn" class="ghost full">Log Out</button>
+      </aside>
+
+      <section class="content-panel">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="today-label"></p>
+            <h2 id="page-title">Dashboard</h2>
+          </div>
+          <div class="topbar-actions">
+            <button id="quick-suggest-btn" class="secondary">Suggest Dinner</button>
+            <button id="quick-random-btn" class="primary">Pick Restaurant</button>
+          </div>
+        </header>
+
+        <section id="toast" class="toast hidden" aria-live="polite"></section>
+        <section id="page-root" class="page-root"></section>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
