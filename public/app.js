@@ -1,6 +1,6 @@
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
-const accentColorOptions = ['#2ecc71', '#3498db', '#f1c40f', '#e74c3c', '#9b59b6'];
-const defaultAccentColor = '#2ecc71';
+const accentColorOptions = ['#4A13F0', '#F0134A', '#B913F0', '#F0B913', '#4AF013'];
+const defaultAccentColor = '#4A13F0';
 const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const fullDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
@@ -83,6 +83,11 @@ function bindAuth() {
 
 function bindShell() {
   $('#logout-btn').addEventListener('click', logout);
+  $('#user-avatar-btn')?.addEventListener('click', async () => {
+    state.page = 'settings';
+    setActiveNav('settings');
+    await renderCurrentPage();
+  });
 
   document.querySelectorAll('[data-page]').forEach(button => {
     button.addEventListener('click', async () => {
@@ -115,6 +120,7 @@ async function bootApp() {
   state.user = me.user;
   state.household = me.household;
   $('#household-name').textContent = me.household?.name || 'Meal Planner';
+  syncUserAvatarUI();
   authScreen.classList.add('hidden');
   appShell.classList.remove('hidden');
   setActiveNav(state.page);
@@ -828,6 +834,22 @@ async function renderSettings() {
   pageRoot.innerHTML = `
     <section class="grid two">
       <article class="card">
+        <h3>Profile</h3>
+        <p class="muted">Add a personal avatar for your household account.</p>
+        <div class="profile-settings-row">
+          ${avatarMarkup(state.user, 'profile')}
+          <div class="profile-settings-copy">
+            <strong>${escapeHtml(state.user?.name || 'User')}</strong>
+            <span class="muted">${escapeHtml(state.user?.email || '')}</span>
+            <div class="profile-actions">
+              <input id="avatar-upload" class="visually-hidden" type="file" accept="image/*" />
+              <button id="avatar-upload-btn" class="secondary" type="button"><i class="ti ti-upload"></i>${state.user?.profilePic ? 'Update Avatar' : 'Upload Avatar'}</button>
+              <button id="avatar-remove-btn" class="ghost" type="button"><i class="ti ti-trash"></i>Remove</button>
+            </div>
+          </div>
+        </div>
+      </article>
+      <article class="card">
         <h3>Household</h3>
         <p class="muted">Share this invite code with your wife or anyone else you want in the meal planner.</p>
         <div class="kpi">${escapeHtml(data.household.inviteCode)}</div>
@@ -855,11 +877,37 @@ async function renderSettings() {
       <article class="card">
         <h3>Members</h3>
         <div class="list">
-          ${data.members.map(member => `<div class="list-item"><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div>`).join('')}
+          ${data.members.map(member => `<div class="list-item member-list-item"><div class="member-identity">${avatarMarkup(member, 'member')}<div><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div></div></div>`).join('')}
         </div>
       </article>
     </section>
   `;
+
+  pageRoot.querySelector('#avatar-upload-btn')?.addEventListener('click', () => pageRoot.querySelector('#avatar-upload')?.click());
+  pageRoot.querySelector('#avatar-upload')?.addEventListener('change', async event => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    try {
+      const profilePic = await imageFileToOptimizedDataUrl(file);
+      await updateAccount({ profilePic });
+      showToast('Avatar updated.');
+      await renderSettings();
+    } catch (error) {
+      showToast(error.message || 'Unable to update avatar.');
+    } finally {
+      event.currentTarget.value = '';
+    }
+  });
+
+  pageRoot.querySelector('#avatar-remove-btn')?.addEventListener('click', async () => {
+    try {
+      await updateAccount({ profilePic: '' });
+      showToast('Avatar removed.');
+      await renderSettings();
+    } catch (error) {
+      showToast(error.message || 'Unable to remove avatar.');
+    }
+  });
 
   pageRoot.querySelectorAll('[data-accent-color]').forEach(button => {
     button.addEventListener('click', () => {
@@ -1037,6 +1085,89 @@ function escapeAttr(value) {
 
 
 
+function escapeInitials(value) {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+  return escapeHtml((parts.length ? parts.slice(0, 2).map(part => part[0]).join('') : 'U').toUpperCase());
+}
+
+function avatarMarkup(user, variant = '') {
+  const profilePic = user?.profilePic || '';
+  const name = user?.name || 'User';
+  const variantClass = variant ? ` user-avatar--${variant}` : '';
+  return `
+    <span class="user-avatar${variantClass}" aria-label="${escapeAttr(name)} avatar">
+      ${profilePic ? `<img class="user-avatar-img" src="${escapeAttr(profilePic)}" alt="${escapeAttr(name)} profile picture" />` : `<span class="user-avatar-fallback">${escapeInitials(name)}</span>`}
+    </span>
+  `;
+}
+
+function syncUserAvatarUI() {
+  const name = state.user?.name || 'User';
+  const profilePic = state.user?.profilePic || '';
+  const nameEl = $('#topnav-user-name');
+  const imageEl = $('#topnav-avatar-img');
+  const fallbackEl = $('#topnav-avatar-fallback');
+  if (nameEl) nameEl.textContent = name;
+  if (imageEl) {
+    imageEl.src = profilePic;
+    imageEl.classList.toggle('hidden', !profilePic);
+  }
+  if (fallbackEl) {
+    fallbackEl.textContent = escapeInitials(name).replace(/&amp;/g, '&');
+    fallbackEl.classList.toggle('hidden', Boolean(profilePic));
+  }
+}
+
+async function updateAccount(payload) {
+  const result = await api('/api/account', { method: 'PUT', body: payload });
+  if (result.user) {
+    state.user = result.user;
+    syncUserAvatarUI();
+  }
+  return result;
+}
+
+async function imageFileToOptimizedDataUrl(file) {
+  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
+
+  const rawDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+
+  const sourceImage = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Unable to process the selected image.'));
+    image.src = rawDataUrl;
+  });
+
+  const avatarSize = 512;
+  const sourceWidth = Math.max(1, sourceImage.naturalWidth || sourceImage.width || 1);
+  const sourceHeight = Math.max(1, sourceImage.naturalHeight || sourceImage.height || 1);
+  const cropSize = Math.min(sourceWidth, sourceHeight);
+  const cropX = Math.round((sourceWidth - cropSize) / 2);
+  const cropY = Math.round((sourceHeight - cropSize) / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = avatarSize;
+  canvas.height = avatarSize;
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) return rawDataUrl;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.fillStyle = '#e8e8ee';
+  context.fillRect(0, 0, avatarSize, avatarSize);
+  context.drawImage(sourceImage, cropX, cropY, cropSize, cropSize, 0, 0, avatarSize, avatarSize);
+  let optimized = canvas.toDataURL('image/webp', 0.88);
+  if (!optimized || optimized === 'data:,') optimized = canvas.toDataURL('image/jpeg', 0.88);
+  if (optimized.length > 1500000) throw new Error('Avatar image is too large. Please choose a smaller image.');
+  return optimized;
+}
+
+
+
 function getDefaultMealTime(mealType) {
   if (mealType === 'breakfast') return '08:00';
   if (mealType === 'lunch') return '12:30';
@@ -1118,7 +1249,7 @@ function applyAccentColor(color) {
 
 function hexToRgb(hex) {
   const clean = String(hex).replace('#', '').trim();
-  if (!/^[0-9a-f]{6}$/i.test(clean)) return { r: 46, g: 204, b: 113 };
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return { r: 74, g: 19, b: 240 };
   return {
     r: parseInt(clean.slice(0, 2), 16),
     g: parseInt(clean.slice(2, 4), 16),

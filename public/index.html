@@ -62,7 +62,14 @@
         </nav>
 
         <div class="topnav-right">
-          <button id="logout-btn" class="ghost" type="button">Log Out</button>
+          <button id="user-avatar-btn" class="user-pill" type="button" aria-label="Open profile settings">
+            <span class="user-avatar user-avatar--nav">
+              <img id="topnav-avatar-img" class="user-avatar-img hidden" alt="Profile picture" />
+              <span id="topnav-avatar-fallback" class="user-avatar-fallback">U</span>
+            </span>
+            <span id="topnav-user-name" class="user-pill-name">User</span>
+          </button>
+          <button id="logout-btn" class="ghost logout-btn" type="button">Log Out</button>
         </div>
       </header>
 

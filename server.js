@@ -32,7 +32,7 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(compression());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -51,6 +51,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
   passwordHash: { type: String, required: true },
+  profilePic: { type: String, default: '', maxlength: 1600000 },
   householdId: { type: objectId, ref: 'Household', required: true },
   role: { type: String, enum: ['owner', 'member'], default: 'member' }
 }, { timestamps: true });
@@ -156,6 +157,7 @@ function publicUser(user) {
     id: user._id,
     name: user.name,
     email: user.email,
+    profilePic: user.profilePic || '',
     householdId: user.householdId,
     role: user.role
   };
@@ -372,10 +374,39 @@ app.get('/api/me', authenticate, async (req, res) => {
   res.json({ user: publicUser(req.user), household });
 });
 
+
+app.put('/api/account', authenticate, async (req, res) => {
+  try {
+    const updates = {};
+
+    if (typeof req.body.name === 'string') {
+      const name = req.body.name.trim();
+      if (!name) return res.status(400).json({ error: 'Name is required.' });
+      if (name.length > 80) return res.status(400).json({ error: 'Name must be 80 characters or fewer.' });
+      updates.name = name;
+    }
+
+    if (req.body.profilePic !== undefined) {
+      const profilePic = String(req.body.profilePic || '');
+      if (profilePic.length > 1600000) {
+        return res.status(400).json({ error: 'Profile picture is too large.' });
+      }
+      updates.profilePic = profilePic;
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true, runValidators: true });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    res.json({ user: publicUser(user) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Account update failed.' });
+  }
+});
+
 app.get('/api/household', authenticate, async (req, res) => {
   const [household, members] = await Promise.all([
     Household.findById(req.householdId).lean(),
-    User.find({ householdId: req.householdId }).select('name email role createdAt').sort({ createdAt: 1 }).lean()
+    User.find({ householdId: req.householdId }).select('name email role profilePic createdAt').sort({ createdAt: 1 }).lean()
   ]);
   res.json({ household, members });
 });
