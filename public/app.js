@@ -854,7 +854,10 @@ async function renderSettings() {
       <article class="card">
         <h3>Household</h3>
         <p class="muted">Share this invite code with your wife or anyone else you want in the meal planner.</p>
-        <div class="kpi invite-code" aria-label="Household invite code">${formatInviteCode(data.household.inviteCode)}</div>
+        <div class="invite-code-row">
+          <div class="kpi invite-code" aria-label="Household invite code">${formatInviteCode(data.household.inviteCode)}</div>
+          <button class="secondary copy-invite-btn" type="button" data-copy-invite="${escapeHtml(String(data.household.inviteCode || '').toUpperCase())}"><i class="ti ti-copy"></i>Copy</button>
+        </div>
         <p>${escapeHtml(data.household.name)}</p>
       </article>
       <article class="card">
@@ -948,6 +951,16 @@ async function renderSettings() {
 
   pageRoot.querySelector('#settings-logout-btn')?.addEventListener('click', logout);
 
+  pageRoot.querySelector('[data-copy-invite]')?.addEventListener('click', async event => {
+    const code = event.currentTarget.dataset.copyInvite || '';
+    try {
+      await copyTextToClipboard(code);
+      showToast('Invite code copied.');
+    } catch (error) {
+      showToast('Unable to copy invite code.');
+    }
+  });
+
   pageRoot.querySelector('#email-invite-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -973,7 +986,6 @@ async function renderSettings() {
       const themeToggle = pageRoot.querySelector('.theme-toggle');
       if (themeToggle) themeToggle.dataset.themeToggleState = theme;
       pageRoot.querySelectorAll('[data-theme-option]').forEach(item => item.classList.toggle('active', item.dataset.themeOption === theme));
-      showToast(`${titleCase(theme)} mode enabled.`);
       requestAnimationFrame(updateActiveNavHover);
     });
   });
@@ -1147,6 +1159,26 @@ function buildInviteMailto(email, householdName, inviteCode) {
     'After signing up, enter the invite code to join the shared meal planner.'
   ].join('\n');
   return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || '').trim();
+  if (!value) throw new Error('No text to copy.');
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('Copy failed.');
 }
 
 function escapeInitials(value) {

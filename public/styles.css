@@ -1907,3 +1907,39 @@ textarea:focus {
     padding-top: 14px;
   }
 }
+
+
+/* Requested copy button and developer logo refinements */
+.developer-logo {
+  width: 110px;
+}
+
+.invite-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.copy-invite-btn {
+  min-height: 32px;
+  padding-inline: 12px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 620px) {
+  .developer-logo {
+    width: 104px;
+  }
+
+  .invite-code-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .copy-invite-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
