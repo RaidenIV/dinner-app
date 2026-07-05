@@ -1089,13 +1089,13 @@ function ratingOptions() {
 
 function recipeRatingOptions(selected = 3) {
   return [1, 2, 3, 4, 5]
-    .map(value => option(value, `${'★'.repeat(value)}${'☆'.repeat(5 - value)}`, selected))
+    .map(value => option(value, '★'.repeat(value), selected))
     .join('');
 }
 
 function starRating(value) {
   const rating = Math.max(0, Math.min(5, Math.round(Number(value) || 0)));
-  const stars = `${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}`;
+  const stars = '★'.repeat(rating);
   return `<span class="star-rating" aria-label="${rating} out of 5 stars">${stars}</span>`;
 }
 
