@@ -1,4 +1,6 @@
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
+const accentColorOptions = ['#2ecc71', '#3498db', '#f1c40f', '#e74c3c', '#9b59b6'];
+const defaultAccentColor = '#2ecc71';
 const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const fullDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
@@ -26,6 +28,7 @@ const appShell = $('#app-shell');
 init();
 
 function init() {
+  applyAccentColor(getStoredAccentColor());
   $('#today-label').textContent = fullDateFormatter.format(new Date());
   bindAuth();
   bindShell();
@@ -263,13 +266,19 @@ function renderDashboard() {
 }
 
 function renderPlanner() {
-  const plansBySlot = new Map(state.planner.plans.map(plan => [`${plan.date}-${plan.mealType}`, plan]));
+  const mealOrder = new Map(mealTypes.map((type, index) => [type, index]));
+  const sortedPlans = [...state.planner.plans].sort((a, b) => {
+    const byDate = String(a.date).localeCompare(String(b.date));
+    if (byDate) return byDate;
+    return (mealOrder.get(a.mealType) ?? 99) - (mealOrder.get(b.mealType) ?? 99);
+  });
+  const plansByDate = groupBy(sortedPlans, plan => plan.date);
 
   pageRoot.innerHTML = `
     <section class="form-card planner-toolbar">
       <div>
         <h3>Weekly Planner</h3>
-        <p class="muted">Plan breakfast, lunch, and dinner. Mark a meal eaten to save it to history.</p>
+        <p class="muted">Use the calendar to add breakfast, lunch, or dinner for each day.</p>
       </div>
       <div class="toolbar">
         <button class="secondary" id="prev-week">Previous</button>
@@ -278,12 +287,21 @@ function renderPlanner() {
         <button class="primary" id="generate-grocery">Generate Grocery List</button>
       </div>
     </section>
-    <section class="week-grid">
+    <section class="calendar-grid" aria-label="Weekly meal calendar">
       ${state.planner.dates.map(date => `
-        <div class="day-column">
-          <div class="day-heading">${dayFormatter.format(new Date(`${date}T12:00:00`))}</div>
-          ${mealTypes.map(mealType => plannerSlot(date, mealType, plansBySlot.get(`${date}-${mealType}`))).join('')}
-        </div>
+        <article class="calendar-day" data-date="${date}">
+          <header class="calendar-day-header">
+            <div>
+              <span class="calendar-day-name">${dayFormatter.format(new Date(`${date}T12:00:00`))}</span>
+              <span class="calendar-day-date">${date}</span>
+            </div>
+            <button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>
+          </header>
+          <div class="calendar-meals">
+            ${(plansByDate[date] || []).length ? plansByDate[date].map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
+          </div>
+          <div class="calendar-form-wrap" data-form-date="${date}"></div>
+        </article>
       `).join('')}
     </section>
   `;
@@ -312,32 +330,14 @@ function renderPlanner() {
     showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
   });
 
-  pageRoot.querySelectorAll('.slot-form').forEach(form => {
-    form.addEventListener('change', event => {
-      if (event.target.name !== 'sourceType') return;
-      const type = event.target.value;
-      const wrapper = event.currentTarget;
-      wrapper.querySelector('[data-recipe-select]').classList.toggle('hidden', type !== 'recipe');
-      wrapper.querySelector('[data-restaurant-select]').classList.toggle('hidden', type !== 'restaurant');
-      wrapper.querySelector('[data-custom-input]').classList.toggle('hidden', type !== 'custom');
-    });
+  pageRoot.querySelectorAll('[data-add-date]').forEach(button => {
+    button.addEventListener('click', () => openCalendarMealForm(button.dataset.addDate));
+  });
 
-    form.addEventListener('submit', async event => {
-      event.preventDefault();
-      const data = Object.fromEntries(new FormData(event.currentTarget));
-      const body = {
-        date: data.date,
-        mealType: data.mealType,
-        sourceType: data.sourceType,
-        sourceId: data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null,
-        customName: data.sourceType === 'custom' ? data.customName : '',
-        status: data.status,
-        notes: data.notes
-      };
-      await api('/api/planner/slot', { method: 'PUT', body });
-      await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
-      showToast('Meal slot saved.');
-      renderPlanner();
+  pageRoot.querySelectorAll('[data-edit-plan]').forEach(button => {
+    button.addEventListener('click', () => {
+      const plan = state.planner.plans.find(item => String(item._id) === String(button.dataset.editPlan));
+      if (plan) openCalendarMealForm(plan.date, plan);
     });
   });
 
@@ -345,55 +345,122 @@ function renderPlanner() {
     button.addEventListener('click', async () => {
       await api(`/api/planner/${button.dataset.deletePlan}`, { method: 'DELETE' });
       await loadPlanner();
-      showToast('Meal slot cleared.');
+      showToast('Meal cleared.');
       renderPlanner();
     });
   });
 }
 
-function plannerSlot(date, mealType, plan) {
+function openCalendarMealForm(date, plan = null) {
+  pageRoot.querySelectorAll('.calendar-form-wrap').forEach(wrapper => {
+    wrapper.innerHTML = '';
+  });
+
+  const wrapper = [...pageRoot.querySelectorAll('.calendar-form-wrap')].find(element => element.dataset.formDate === date);
+  if (!wrapper) return;
+
+  wrapper.innerHTML = calendarMealForm(date, plan);
+  const form = wrapper.querySelector('.slot-form');
+  const sourceTypeSelect = form.querySelector('[name="sourceType"]');
+
+  const syncSourceFields = () => {
+    const type = sourceTypeSelect.value;
+    form.querySelector('[data-recipe-select]').classList.toggle('hidden', type !== 'recipe');
+    form.querySelector('[data-restaurant-select]').classList.toggle('hidden', type !== 'restaurant');
+    form.querySelector('[data-custom-input]').classList.toggle('hidden', type !== 'custom');
+  };
+
+  sourceTypeSelect.addEventListener('change', syncSourceFields);
+  wrapper.querySelector('[data-cancel-meal-form]').addEventListener('click', () => {
+    wrapper.innerHTML = '';
+  });
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    const body = {
+      date: data.date,
+      mealType: data.mealType,
+      sourceType: data.sourceType,
+      sourceId: data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null,
+      customName: data.sourceType === 'custom' ? data.customName : '',
+      status: data.status,
+      notes: data.notes
+    };
+
+    await api('/api/planner/slot', { method: 'PUT', body });
+    if (data.planId && data.originalMealType && data.originalMealType !== data.mealType) {
+      await api(`/api/planner/${data.planId}`, { method: 'DELETE' });
+    }
+    await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
+    showToast('Meal saved.');
+    renderPlanner();
+  });
+
+  syncSourceFields();
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function calendarMealForm(date, plan = null) {
   const sourceType = plan?.sourceType || 'custom';
   const selectedRecipeId = sourceType === 'recipe' ? String(plan?.sourceId || '') : '';
   const selectedRestaurantId = sourceType === 'restaurant' ? String(plan?.sourceId || '') : '';
-  const title = plan ? getPlanName(plan) : 'Nothing planned';
 
   return `
-    <article class="slot">
-      <div class="list-title">
-        <div>
-          <h4>${mealType}</h4>
-          <p class="muted">${escapeHtml(title)}</p>
-        </div>
-        ${plan ? `<span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : 'accent'}">${plan.status}</span>` : ''}
-      </div>
-      <form class="slot-form">
-        <input type="hidden" name="date" value="${date}" />
-        <input type="hidden" name="mealType" value="${mealType}" />
+    <form class="slot-form calendar-meal-form">
+      <input type="hidden" name="date" value="${date}" />
+      <input type="hidden" name="planId" value="${escapeAttr(plan?._id || '')}" />
+      <input type="hidden" name="originalMealType" value="${escapeAttr(plan?.mealType || '')}" />
+      <label>Meal Label
+        <select name="mealType">
+          ${mealTypes.map(type => option(type, titleCase(type), plan?.mealType || 'dinner')).join('')}
+        </select>
+      </label>
+      <label>Meal Source
         <select name="sourceType">
           ${option('custom', 'Custom', sourceType)}
           ${option('recipe', 'Recipe', sourceType)}
           ${option('restaurant', 'Restaurant', sourceType)}
         </select>
-        <select name="recipeId" data-recipe-select class="${sourceType !== 'recipe' ? 'hidden' : ''}">
-          <option value="">Select recipe</option>
-          ${state.recipes.map(recipe => option(recipe._id, recipe.name, selectedRecipeId)).join('')}
-        </select>
-        <select name="restaurantId" data-restaurant-select class="${sourceType !== 'restaurant' ? 'hidden' : ''}">
-          <option value="">Select restaurant</option>
-          ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, selectedRestaurantId)).join('')}
-        </select>
-        <input name="customName" data-custom-input class="${sourceType !== 'custom' ? 'hidden' : ''}" placeholder="Custom meal" value="${escapeAttr(plan?.customName || '')}" />
+      </label>
+      <select name="recipeId" data-recipe-select class="${sourceType !== 'recipe' ? 'hidden' : ''}">
+        <option value="">Select recipe</option>
+        ${state.recipes.map(recipe => option(recipe._id, recipe.name, selectedRecipeId)).join('')}
+      </select>
+      <select name="restaurantId" data-restaurant-select class="${sourceType !== 'restaurant' ? 'hidden' : ''}">
+        <option value="">Select restaurant</option>
+        ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, selectedRestaurantId)).join('')}
+      </select>
+      <input name="customName" data-custom-input class="${sourceType !== 'custom' ? 'hidden' : ''}" placeholder="Custom meal" value="${escapeAttr(plan?.customName || '')}" />
+      <label>Status
         <select name="status">
           ${option('planned', 'Planned', plan?.status || 'planned')}
           ${option('eaten', 'Eaten', plan?.status || 'planned')}
           ${option('skipped', 'Skipped', plan?.status || 'planned')}
         </select>
-        <textarea name="notes" placeholder="Notes">${escapeHtml(plan?.notes || '')}</textarea>
-        <div class="action-row">
-          <button class="primary" type="submit">Save</button>
-          ${plan ? `<button class="danger" type="button" data-delete-plan="${plan._id}">Clear</button>` : ''}
-        </div>
-      </form>
+      </label>
+      <textarea name="notes" placeholder="Notes">${escapeHtml(plan?.notes || '')}</textarea>
+      <div class="action-row">
+        <button class="primary" type="submit">Save Meal</button>
+        <button class="ghost" type="button" data-cancel-meal-form>Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function plannerMealItem(plan) {
+  return `
+    <article class="calendar-meal">
+      <div class="calendar-meal-main">
+        <span class="badge accent">${escapeHtml(plan.mealType)}</span>
+        <strong>${escapeHtml(getPlanName(plan))}</strong>
+        ${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}
+      </div>
+      <div class="calendar-meal-actions">
+        <span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : ''}">${escapeHtml(plan.status)}</span>
+        <button class="small-btn" type="button" data-edit-plan="${plan._id}">Edit</button>
+        <button class="danger small-btn" type="button" data-delete-plan="${plan._id}">Clear</button>
+      </div>
     </article>
   `;
 }
@@ -672,6 +739,7 @@ function renderStats() {
 
 async function renderSettings() {
   const data = await api('/api/household');
+  const activeAccent = getStoredAccentColor();
   pageRoot.innerHTML = `
     <section class="grid two">
       <article class="card">
@@ -681,6 +749,17 @@ async function renderSettings() {
         <p>${escapeHtml(data.household.name)}</p>
       </article>
       <article class="card">
+        <h3>Accent Color</h3>
+        <p class="muted">Choose the app accent color for buttons, badges, navigation, and highlights.</p>
+        <div class="accent-picker" aria-label="Accent color options">
+          ${accentColorOptions.map(color => `
+            <button class="accent-swatch ${color === activeAccent ? 'active' : ''}" type="button" data-accent-color="${color}" style="--swatch:${color}" aria-label="Use accent color ${color}">
+              <span>${color}</span>
+            </button>
+          `).join('')}
+        </div>
+      </article>
+      <article class="card">
         <h3>Members</h3>
         <div class="list">
           ${data.members.map(member => `<div class="list-item"><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div>`).join('')}
@@ -688,6 +767,18 @@ async function renderSettings() {
       </article>
     </section>
   `;
+
+  pageRoot.querySelectorAll('[data-accent-color]').forEach(button => {
+    button.addEventListener('click', () => {
+      const color = button.dataset.accentColor;
+      if (!accentColorOptions.includes(color)) return;
+      localStorage.setItem('mealPlannerAccentColor', color);
+      applyAccentColor(color);
+      pageRoot.querySelectorAll('[data-accent-color]').forEach(item => item.classList.toggle('active', item.dataset.accentColor === color));
+      showToast(`Accent color updated to ${color}.`);
+      requestAnimationFrame(updateActiveNavHover);
+    });
+  });
 }
 
 function kpiCard(label, value, subtext) {
@@ -837,6 +928,44 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replace(/'/g, '&#39;');
+}
+
+
+function getStoredAccentColor() {
+  const saved = localStorage.getItem('mealPlannerAccentColor');
+  return accentColorOptions.includes(saved) ? saved : defaultAccentColor;
+}
+
+function applyAccentColor(color) {
+  const accent = accentColorOptions.includes(color) ? color : defaultAccentColor;
+  const root = document.documentElement;
+  root.style.setProperty('--brand', accent);
+  root.style.setProperty('--brand-hover', shadeHex(accent, -12));
+  root.style.setProperty('--brand-light', hexToRgba(accent, 0.12));
+  root.style.setProperty('--brand-border', hexToRgba(accent, 0.22));
+  root.style.setProperty('--accent', accent);
+  root.style.setProperty('--accent-2', shadeHex(accent, -12));
+}
+
+function hexToRgb(hex) {
+  const clean = String(hex).replace('#', '').trim();
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return { r: 46, g: 204, b: 113 };
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16)
+  };
+}
+
+function hexToRgba(hex, alpha) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function shadeHex(hex, percent) {
+  const { r, g, b } = hexToRgb(hex);
+  const shade = channel => Math.max(0, Math.min(255, Math.round(channel + (percent / 100) * 255)));
+  return `#${[shade(r), shade(g), shade(b)].map(value => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
 
