@@ -37,6 +37,7 @@ function init() {
   bindShell();
   setupMagneticNav();
   bindTactileSounds();
+  initializeMobileWebSidebar();
 
   if (state.token) {
     bootApp().catch(() => logout());
@@ -86,6 +87,7 @@ function bindAuth() {
 function bindShell() {
   $('#logout-btn')?.addEventListener('click', logout);
   $('#user-avatar-btn')?.addEventListener('click', async () => {
+    closeMobileWebSidebarForModal();
     state.page = 'settings';
     setActiveNav('settings');
     await renderCurrentPage();
@@ -96,6 +98,7 @@ function bindShell() {
       state.page = button.dataset.page;
       document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
       requestAnimationFrame(() => setNavHover(button));
+      setMobileWebSidebarOpen(false);
       await renderCurrentPage();
     });
   });
@@ -271,6 +274,7 @@ function renderDashboard() {
 
   pageRoot.querySelectorAll('[data-go]').forEach(button => {
     button.addEventListener('click', async () => {
+      setMobileWebSidebarOpen(false);
       state.page = button.dataset.go;
       setActiveNav(state.page);
       await renderCurrentPage();
@@ -366,6 +370,7 @@ function renderPlanner() {
 }
 
 function openCalendarMealForm(date, plan = null) {
+  closeMobileWebSidebarForModal();
   closeCalendarMealModal(true);
 
   const modal = document.createElement('div');
@@ -1415,6 +1420,148 @@ function shadeHex(hex, percent) {
 }
 
 
+
+function isMobileWebSidebarViewport() {
+  return window.matchMedia('(max-width: 980px)').matches;
+}
+
+function renderPanelEdgeToggleIcon(isOpen) {
+  const panelEdgeToggle = document.getElementById('panelEdgeToggle');
+  if (!panelEdgeToggle) return;
+
+  if (isMobileWebSidebarViewport()) {
+    panelEdgeToggle.innerHTML = isOpen
+      ? `<svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>`
+      : `<svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>`;
+    panelEdgeToggle.setAttribute('aria-label', isOpen ? 'Close sidebar' : 'Open sidebar');
+    panelEdgeToggle.setAttribute('aria-expanded', String(isOpen));
+    return;
+  }
+
+  panelEdgeToggle.innerHTML = `<svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+    </svg>`;
+  panelEdgeToggle.setAttribute('aria-label', 'Open sidebar');
+  panelEdgeToggle.setAttribute('aria-expanded', 'false');
+}
+
+function scrollMobileWebSidebarToTop() {
+  if (!isMobileWebSidebarViewport()) return;
+  const controlPanel = document.getElementById('controlPanel');
+  const scrollInner = controlPanel?.querySelector?.('.control-panel-scroll-inner');
+
+  [controlPanel, scrollInner].forEach(element => {
+    if (!element) return;
+    element.scrollTop = 0;
+    element.scrollLeft = 0;
+    if (typeof element.scrollTo === 'function') {
+      try {
+        element.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      } catch (error) {
+        element.scrollTop = 0;
+        element.scrollLeft = 0;
+      }
+    }
+  });
+}
+
+function setMobileWebSidebarOpen(isOpen) {
+  const nextOpen = Boolean(isOpen) && isMobileWebSidebarViewport();
+  document.body.classList.toggle('mobile-drawer-open', nextOpen);
+  document.body.classList.remove('mobile-sidebar-open');
+
+  const controlPanel = document.getElementById('controlPanel');
+  if (controlPanel) controlPanel.setAttribute('aria-hidden', nextOpen ? 'false' : 'true');
+
+  if (nextOpen) {
+    scrollMobileWebSidebarToTop();
+    requestAnimationFrame(scrollMobileWebSidebarToTop);
+  }
+
+  renderPanelEdgeToggleIcon(nextOpen);
+}
+
+function closeMobileWebSidebarForModal() {
+  if (!isMobileWebSidebarViewport()) return;
+  setMobileWebSidebarOpen(false);
+}
+
+function syncMobileAppBarHeight() {
+  const topnav = document.querySelector('.topnav');
+  const root = document.documentElement;
+  if (!topnav || !root) return;
+
+  if (!isMobileWebSidebarViewport()) {
+    root.style.removeProperty('--mobile-app-bar-height');
+    return;
+  }
+
+  const measuredHeight = Math.ceil(topnav.getBoundingClientRect().height || 0);
+  root.style.setProperty('--mobile-app-bar-height', `${measuredHeight > 0 ? measuredHeight : 54}px`);
+}
+
+function initializeMobileWebSidebar() {
+  const controlPanel = document.getElementById('controlPanel');
+  const panelEdgeToggle = document.getElementById('panelEdgeToggle');
+  if (!controlPanel || !panelEdgeToggle) return;
+
+  const isSidebarOpen = () => document.body.classList.contains('mobile-drawer-open');
+  const isInsideSidebar = target => Boolean(target?.closest?.('#controlPanel'));
+  const isToggle = target => Boolean(target?.closest?.('#panelEdgeToggle'));
+  const isModalOpen = () => Boolean(document.querySelector('#meal-time-modal.open, .time-modal-overlay.open'));
+
+  const syncMobileSidebarState = () => {
+    syncMobileAppBarHeight();
+
+    if (!isMobileWebSidebarViewport()) {
+      setMobileWebSidebarOpen(false);
+      controlPanel.removeAttribute('aria-hidden');
+      renderPanelEdgeToggleIcon(false);
+      requestAnimationFrame(updateActiveNavHover);
+      return;
+    }
+
+    controlPanel.setAttribute('aria-hidden', isSidebarOpen() ? 'false' : 'true');
+    renderPanelEdgeToggleIcon(isSidebarOpen());
+  };
+
+  panelEdgeToggle.addEventListener('click', () => {
+    if (!isMobileWebSidebarViewport()) return;
+    setMobileWebSidebarOpen(!isSidebarOpen());
+  });
+
+  document.addEventListener('click', event => {
+    if (!isMobileWebSidebarViewport() || !isSidebarOpen() || isModalOpen()) return;
+    if (isInsideSidebar(event.target) || isToggle(event.target)) return;
+    setMobileWebSidebarOpen(false);
+  }, true);
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && isMobileWebSidebarViewport() && isSidebarOpen()) {
+      setMobileWebSidebarOpen(false);
+    }
+  });
+
+  window.addEventListener('resize', syncMobileSidebarState);
+  window.addEventListener('orientationchange', () => requestAnimationFrame(syncMobileSidebarState));
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const topnav = document.querySelector('.topnav');
+    if (topnav) {
+      window.__homeplateMobileTopnavObserver?.disconnect?.();
+      window.__homeplateMobileTopnavObserver = new ResizeObserver(() => syncMobileAppBarHeight());
+      window.__homeplateMobileTopnavObserver.observe(topnav);
+    }
+  }
+
+  requestAnimationFrame(syncMobileSidebarState);
+  syncMobileSidebarState();
+}
+
 function setupMagneticNav() {
   const navList = document.querySelector('.topnav-nav');
   const navLinks = [...document.querySelectorAll('.topnav-nav .nav-item')];
@@ -1453,6 +1600,7 @@ function setupMagneticNav() {
 }
 
 function setNavHover(link) {
+  if (isMobileWebSidebarViewport()) return;
   const navList = document.querySelector('.topnav-nav');
   if (!navList || !link || appShell.classList.contains('hidden')) return;
   const navRect = navList.getBoundingClientRect();
