@@ -569,8 +569,8 @@ function renderRecipes() {
           <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
           <label>Prep Time<input name="prepTime" type="number" min="0" value="10" /></label>
           <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
-          <label>Difficulty<select name="difficulty"><option>easy</option><option>medium</option><option>hard</option></select></label>
-          <label>Rating<select name="rating">${ratingOptions()}</select></label>
+          <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+          <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
           <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
           <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
           <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
@@ -977,17 +977,14 @@ async function renderSettings() {
     }
   });
 
-  pageRoot.querySelectorAll('[data-theme-option]').forEach(button => {
-    button.addEventListener('click', () => {
-      const theme = button.dataset.themeOption;
-      if (!['light', 'dark'].includes(theme)) return;
-      localStorage.setItem('mealPlannerTheme', theme);
-      applyTheme(theme);
-      const themeToggle = pageRoot.querySelector('.theme-toggle');
-      if (themeToggle) themeToggle.dataset.themeToggleState = theme;
-      pageRoot.querySelectorAll('[data-theme-option]').forEach(item => item.classList.toggle('active', item.dataset.themeOption === theme));
-      requestAnimationFrame(updateActiveNavHover);
-    });
+  pageRoot.querySelector('.theme-toggle')?.addEventListener('click', () => {
+    const nextTheme = getStoredTheme() === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('mealPlannerTheme', nextTheme);
+    applyTheme(nextTheme);
+    const themeToggle = pageRoot.querySelector('.theme-toggle');
+    if (themeToggle) themeToggle.dataset.themeToggleState = nextTheme;
+    pageRoot.querySelectorAll('[data-theme-option]').forEach(item => item.classList.toggle('active', item.dataset.themeOption === nextTheme));
+    requestAnimationFrame(updateActiveNavHover);
   });
 }
 
@@ -1015,7 +1012,7 @@ function recipeItem(recipe) {
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
         ${recipe.favorite ? '<span class="badge good">favorite</span>' : ''}
       </div>
-      <p class="muted">${recipe.prepTime || 0}m prep • ${recipe.cookTime || 0}m cook • ${recipe.rating || 0}/5 • cooked ${recipe.timesCooked || 0}x</p>
+      <p class="muted">${recipe.prepTime || 0}m prep • ${recipe.cookTime || 0}m cook • ${starRating(recipe.rating || 0)} • cooked ${recipe.timesCooked || 0}x</p>
       ${(recipe.ingredients || []).length ? `<p>${recipe.ingredients.slice(0, 4).map(item => escapeHtml(item.name)).join(', ')}${recipe.ingredients.length > 4 ? '…' : ''}</p>` : ''}
     </div>
   `;
@@ -1088,6 +1085,18 @@ function option(value, label, selected) {
 
 function ratingOptions() {
   return [0, 1, 2, 3, 4, 5].map(value => option(value, `${value}/5`, 0)).join('');
+}
+
+function recipeRatingOptions(selected = 3) {
+  return [1, 2, 3, 4, 5]
+    .map(value => option(value, `${'★'.repeat(value)}${'☆'.repeat(5 - value)}`, selected))
+    .join('');
+}
+
+function starRating(value) {
+  const rating = Math.max(0, Math.min(5, Math.round(Number(value) || 0)));
+  const stars = `${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}`;
+  return `<span class="star-rating" aria-label="${rating} out of 5 stars">${stars}</span>`;
 }
 
 function formToBody(form) {

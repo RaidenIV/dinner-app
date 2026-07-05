@@ -1333,6 +1333,7 @@ textarea:focus {
   background: var(--surface);
   position: relative;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .theme-toggle::before {
@@ -1369,6 +1370,13 @@ textarea:focus {
 
 .theme-option.active {
   color: #ffffff;
+}
+
+.star-rating {
+  color: var(--star);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .time-modal-overlay {
