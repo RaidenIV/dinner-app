@@ -29,6 +29,7 @@ function init() {
   $('#today-label').textContent = fullDateFormatter.format(new Date());
   bindAuth();
   bindShell();
+  setupMagneticNav();
 
   if (state.token) {
     bootApp().catch(() => logout());
@@ -82,6 +83,7 @@ function bindShell() {
     button.addEventListener('click', async () => {
       state.page = button.dataset.page;
       document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
+      requestAnimationFrame(() => setNavHover(button));
       await renderCurrentPage();
     });
   });
@@ -110,6 +112,7 @@ async function bootApp() {
   $('#household-name').textContent = me.household?.name || 'Meal Planner';
   authScreen.classList.add('hidden');
   appShell.classList.remove('hidden');
+  requestAnimationFrame(() => updateActiveNavHover());
   await loadBaseData();
   await renderCurrentPage();
 }
@@ -141,6 +144,7 @@ async function renderCurrentPage() {
 function setActiveNav(page) {
   document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === page));
   $('#page-title').textContent = titleCase(page === 'grocery' ? 'Grocery List' : page);
+  requestAnimationFrame(() => updateActiveNavHover());
 }
 
 function setSession(result) {
@@ -833,6 +837,62 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replace(/'/g, '&#39;');
+}
+
+
+function setupMagneticNav() {
+  const navList = document.querySelector('.topnav-nav');
+  const navLinks = [...document.querySelectorAll('.topnav-nav .nav-item')];
+  if (!navList || !navLinks.length) return;
+
+  let clearNavTimer = null;
+
+  navLinks.forEach(link => {
+    link.addEventListener('pointerenter', () => {
+      clearTimeout(clearNavTimer);
+      setNavHover(link);
+    });
+
+    link.addEventListener('focus', () => {
+      clearTimeout(clearNavTimer);
+      setNavHover(link);
+    });
+  });
+
+  navList.addEventListener('pointermove', event => {
+    clearTimeout(clearNavTimer);
+    const link = event.target.closest('.nav-item');
+    if (link && navList.contains(link)) setNavHover(link);
+  });
+
+  navList.addEventListener('pointerleave', () => {
+    clearTimeout(clearNavTimer);
+    clearNavTimer = setTimeout(updateActiveNavHover, 450);
+  });
+
+  navList.addEventListener('focusout', event => {
+    if (!navList.contains(event.relatedTarget)) updateActiveNavHover();
+  });
+
+  window.addEventListener('resize', updateActiveNavHover);
+}
+
+function setNavHover(link) {
+  const navList = document.querySelector('.topnav-nav');
+  if (!navList || !link || appShell.classList.contains('hidden')) return;
+  const navRect = navList.getBoundingClientRect();
+  const linkRect = link.getBoundingClientRect();
+  if (!linkRect.width || !linkRect.height) return;
+  navList.style.setProperty('--nav-hover-x', `${linkRect.left - navRect.left}px`);
+  navList.style.setProperty('--nav-hover-y', `${linkRect.top - navRect.top}px`);
+  navList.style.setProperty('--nav-hover-w', `${linkRect.width}px`);
+  navList.style.setProperty('--nav-hover-h', `${linkRect.height}px`);
+  navList.style.setProperty('--nav-hover-opacity', '1');
+}
+
+function updateActiveNavHover() {
+  const active = document.querySelector('.topnav-nav .nav-item.active') || document.querySelector('.topnav-nav .nav-item');
+  if (active) setNavHover(active);
 }
 
 function showToast(message) {
