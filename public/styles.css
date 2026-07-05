@@ -1813,3 +1813,97 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* Requested invite/logo/planner refinements */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.content-panel {
+  flex: 1;
+  min-height: calc(100vh - 68px);
+}
+
+.developer-footer {
+  margin-top: auto;
+  padding: 18px 0 0;
+}
+
+.developer-logo-wrap {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.developer-logo {
+  filter: brightness(0);
+}
+
+:root[data-theme="dark"] .developer-logo {
+  filter: none;
+}
+
+.calendar-add-btn {
+  font-size: 0;
+  line-height: 1;
+  text-align: center;
+}
+
+.calendar-add-btn::before {
+  content: '+';
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.calendar-day-header > div {
+  min-width: 0;
+}
+
+.calendar-day-name {
+  font-size: clamp(12px, 0.9vw, 15px);
+}
+
+.calendar-day-date {
+  margin-top: 5px;
+}
+
+.invite-code {
+  gap: 0.32em;
+  letter-spacing: 0;
+}
+
+.invite-code span {
+  display: inline-block;
+}
+
+.invite-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.invite-list {
+  margin-top: 14px;
+}
+
+.invite-list-item .invite-code {
+  display: inline-flex;
+  margin-left: 4px;
+  font-size: 0.95em;
+}
+
+@media (max-width: 620px) {
+  .content-panel {
+    min-height: calc(100vh - 118px);
+  }
+
+  .developer-footer {
+    padding-top: 14px;
+  }
+}

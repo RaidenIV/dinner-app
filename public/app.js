@@ -2,6 +2,8 @@ const mealTypes = ['breakfast', 'lunch', 'dinner'];
 const accentColorOptions = ['#4A13F0', '#F0134A', '#B913F0', '#F0B913', '#4AF013'];
 const defaultAccentColor = '#4A13F0';
 const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const plannerWeekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
+const plannerDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const fullDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
 const state = {
@@ -305,8 +307,8 @@ function renderPlanner() {
         <article class="calendar-day" data-date="${date}">
           <header class="calendar-day-header">
             <div>
-              <span class="calendar-day-name">${dayFormatter.format(new Date(`${date}T12:00:00`))}</span>
-              <span class="calendar-day-date">${date}</span>
+              <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
+              <span class="calendar-day-date">${plannerDateFormatter.format(new Date(`${date}T12:00:00`))}</span>
             </div>
             <button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>
           </header>
@@ -852,8 +854,26 @@ async function renderSettings() {
       <article class="card">
         <h3>Household</h3>
         <p class="muted">Share this invite code with your wife or anyone else you want in the meal planner.</p>
-        <div class="kpi invite-code" aria-label="Household invite code">${escapeHtml(data.household.inviteCode)}</div>
+        <div class="kpi invite-code" aria-label="Household invite code">${formatInviteCode(data.household.inviteCode)}</div>
         <p>${escapeHtml(data.household.name)}</p>
+      </article>
+      <article class="card">
+        <h3>Email Invite</h3>
+        <p class="muted">Send an invite to a specific email. They can create an account and use the household invite code to join.</p>
+        <form id="email-invite-form" class="invite-form">
+          <label>Recipient Email<input name="email" type="email" placeholder="name@example.com" required /></label>
+          <button class="primary full" type="submit"><i class="ti ti-mail-plus"></i>Send Invite</button>
+        </form>
+        <div class="list invite-list">
+          ${(data.invites || []).length ? (data.invites || []).map(invite => `
+            <div class="list-item invite-list-item">
+              <div>
+                <strong>${escapeHtml(invite.email)}</strong>
+                <span class="muted">${escapeHtml(titleCase(invite.status || 'pending'))} • Code ${formatInviteCode(invite.inviteCode || data.household.inviteCode)}</span>
+              </div>
+            </div>
+          `).join('') : '<div class="empty compact">No email invites sent yet.</div>'}
+        </div>
       </article>
       <article class="card">
         <h3>Accent Color</h3>
@@ -927,6 +947,22 @@ async function renderSettings() {
   });
 
   pageRoot.querySelector('#settings-logout-btn')?.addEventListener('click', logout);
+
+  pageRoot.querySelector('#email-invite-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = formToBody(form);
+    try {
+      const result = await api('/api/household/invites', { method: 'POST', body });
+      const inviteCode = result.invite?.inviteCode || data.household.inviteCode;
+      const mailto = buildInviteMailto(result.invite?.email || body.email, result.householdName || data.household.name, inviteCode);
+      showToast(`Invite ready for ${result.invite?.email || body.email}.`);
+      window.setTimeout(() => { window.location.href = mailto; }, 180);
+      await renderSettings();
+    } catch (error) {
+      showToast(error.message || 'Unable to send invite.');
+    }
+  });
 
   pageRoot.querySelectorAll('[data-theme-option]').forEach(button => {
     button.addEventListener('click', () => {
@@ -1092,7 +1128,26 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/'/g, '&#39;');
 }
 
+function formatInviteCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .split('')
+    .map(char => `<span>${escapeHtml(char)}</span>`)
+    .join('');
+}
 
+function buildInviteMailto(email, householdName, inviteCode) {
+  const subject = `Join ${householdName || 'my household'} on HomePlate`;
+  const body = [
+    `I sent you an invite to join ${householdName || 'my household'} on HomePlate.`,
+    '',
+    `Create an account and use this household invite code: ${String(inviteCode || '').toUpperCase()}`,
+    '',
+    'After signing up, enter the invite code to join the shared meal planner.'
+  ].join('\n');
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 
 function escapeInitials(value) {
   const parts = String(value || '').trim().split(/\s+/).filter(Boolean);

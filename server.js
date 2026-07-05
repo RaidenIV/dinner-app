@@ -47,6 +47,17 @@ const householdSchema = new mongoose.Schema({
   createdBy: { type: objectId, ref: 'User' }
 }, { timestamps: true });
 
+const householdInviteSchema = new mongoose.Schema({
+  householdId: { type: objectId, ref: 'Household', required: true, index: true },
+  email: { type: String, required: true, lowercase: true, trim: true, index: true },
+  inviteCode: { type: String, required: true, trim: true },
+  invitedBy: { type: objectId, ref: 'User' },
+  status: { type: String, enum: ['pending', 'accepted'], default: 'pending' },
+  lastSentAt: { type: Date },
+  acceptedAt: { type: Date }
+}, { timestamps: true });
+householdInviteSchema.index({ householdId: 1, email: 1 }, { unique: true });
+
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
@@ -137,6 +148,7 @@ const mealHistorySchema = new mongoose.Schema({
 mealHistorySchema.index({ householdId: 1, date: 1, mealType: 1, sourceType: 1, sourceId: 1, name: 1 });
 
 const Household = mongoose.model('Household', householdSchema);
+const HouseholdInvite = mongoose.model('HouseholdInvite', householdInviteSchema);
 const User = mongoose.model('User', userSchema);
 const Recipe = mongoose.model('Recipe', recipeSchema);
 const Restaurant = mongoose.model('Restaurant', restaurantSchema);
@@ -146,6 +158,26 @@ const MealHistory = mongoose.model('MealHistory', mealHistorySchema);
 
 function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
+}
+
+function normalizeEmail(value) {
+  return String(value || '').toLowerCase().trim();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function publicInvite(invite) {
+  return {
+    id: invite._id,
+    email: invite.email,
+    inviteCode: invite.inviteCode,
+    status: invite.status,
+    lastSentAt: invite.lastSentAt,
+    acceptedAt: invite.acceptedAt,
+    createdAt: invite.createdAt
+  };
 }
 
 function tokenFor(user) {
@@ -310,14 +342,18 @@ app.get('/health', (req, res) => {
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { name, email, password, householdName, inviteCode } = req.body;
-    if (!name || !email || !password) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!name || !normalizedEmail || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ error: 'Enter a valid email address.' });
     }
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
 
-    const existing = await User.findOne({ email: String(email).toLowerCase().trim() });
+    const existing = await User.findOne({ email: normalizedEmail });
     if (existing) return res.status(409).json({ error: 'An account with that email already exists.' });
 
     let household;
@@ -336,7 +372,7 @@ app.post('/api/auth/signup', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await User.create({
       name,
-      email,
+      email: normalizedEmail,
       passwordHash,
       householdId: household._id,
       role
@@ -345,6 +381,13 @@ app.post('/api/auth/signup', async (req, res) => {
     if (!household.createdBy) {
       household.createdBy = user._id;
       await household.save();
+    }
+
+    if (inviteCode) {
+      await HouseholdInvite.findOneAndUpdate(
+        { householdId: household._id, email: normalizedEmail, inviteCode: household.inviteCode },
+        { $set: { status: 'accepted', acceptedAt: new Date() } }
+      );
     }
 
     res.status(201).json({ token: tokenFor(user), user: publicUser(user), household });
@@ -356,7 +399,7 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email: String(email || '').toLowerCase().trim() });
+    const user = await User.findOne({ email: normalizeEmail(email) });
     if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
 
     const ok = await bcrypt.compare(String(password || ''), user.passwordHash);
@@ -404,11 +447,47 @@ app.put('/api/account', authenticate, async (req, res) => {
 });
 
 app.get('/api/household', authenticate, async (req, res) => {
-  const [household, members] = await Promise.all([
+  const [household, members, invites] = await Promise.all([
     Household.findById(req.householdId).lean(),
-    User.find({ householdId: req.householdId }).select('name email role profilePic createdAt').sort({ createdAt: 1 }).lean()
+    User.find({ householdId: req.householdId }).select('name email role profilePic createdAt').sort({ createdAt: 1 }).lean(),
+    HouseholdInvite.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).limit(20).lean()
   ]);
-  res.json({ household, members });
+  res.json({ household, members, invites: invites.map(publicInvite) });
+});
+
+app.post('/api/household/invites', authenticate, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ error: 'Enter a valid recipient email.' });
+    }
+
+    const household = await Household.findById(req.householdId).lean();
+    if (!household) return res.status(404).json({ error: 'Household not found.' });
+
+    const existingUser = await User.findOne({ email }).lean();
+    if (existingUser?.householdId && String(existingUser.householdId) === String(req.householdId)) {
+      return res.status(409).json({ error: 'That email is already in this household.' });
+    }
+
+    const invite = await HouseholdInvite.findOneAndUpdate(
+      { householdId: req.householdId, email },
+      {
+        $set: {
+          email,
+          inviteCode: household.inviteCode,
+          invitedBy: req.user._id,
+          status: 'pending',
+          lastSentAt: new Date()
+        }
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.status(201).json({ invite: publicInvite(invite), householdName: household.name });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to create invite.' });
+  }
 });
 
 app.patch('/api/household', authenticate, async (req, res) => {
