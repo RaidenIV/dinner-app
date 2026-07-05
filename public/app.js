@@ -28,11 +28,13 @@ const appShell = $('#app-shell');
 init();
 
 function init() {
+  applyTheme(getStoredTheme());
   applyAccentColor(getStoredAccentColor());
   $('#today-label').textContent = fullDateFormatter.format(new Date());
   bindAuth();
   bindShell();
   setupMagneticNav();
+  bindTactileSounds();
 
   if (state.token) {
     bootApp().catch(() => logout());
@@ -273,6 +275,8 @@ function renderPlanner() {
   const sortedPlans = [...state.planner.plans].sort((a, b) => {
     const byDate = String(a.date).localeCompare(String(b.date));
     if (byDate) return byDate;
+    const byTime = String(a.time || '').localeCompare(String(b.time || ''));
+    if (byTime) return byTime;
     return (mealOrder.get(a.mealType) ?? 99) - (mealOrder.get(b.mealType) ?? 99);
   });
   const plansByDate = groupBy(sortedPlans, plan => plan.date);
@@ -303,7 +307,6 @@ function renderPlanner() {
           <div class="calendar-meals">
             ${(plansByDate[date] || []).length ? plansByDate[date].map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
           </div>
-          <div class="calendar-form-wrap" data-form-date="${date}"></div>
         </article>
       `).join('')}
     </section>
@@ -355,28 +358,70 @@ function renderPlanner() {
 }
 
 function openCalendarMealForm(date, plan = null) {
-  pageRoot.querySelectorAll('.calendar-form-wrap').forEach(wrapper => {
-    wrapper.innerHTML = '';
-  });
+  closeCalendarMealModal(true);
 
-  const wrapper = [...pageRoot.querySelectorAll('.calendar-form-wrap')].find(element => element.dataset.formDate === date);
-  if (!wrapper) return;
+  const modal = document.createElement('div');
+  modal.className = 'time-modal-overlay';
+  modal.id = 'meal-time-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', `${plan ? 'Edit' : 'Add'} meal for ${date}`);
+  modal.innerHTML = `
+    <div class="time-modal-card">
+      <header class="time-modal-header">
+        <div>
+          <h3>${plan ? 'Edit Meal' : 'Add Meal'}</h3>
+          <p class="muted">${dayFormatter.format(new Date(`${date}T12:00:00`))} · ${date}</p>
+        </div>
+        <button class="small-btn modal-close-btn" type="button" data-close-meal-modal aria-label="Close meal form">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          ${calendarMealForm(date, plan)}
+        </div>
+      </div>
+    </div>
+  `;
 
-  wrapper.innerHTML = calendarMealForm(date, plan);
-  const form = wrapper.querySelector('.slot-form');
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => modal.classList.add('open'));
+
+  const form = modal.querySelector('.slot-form');
   const sourceTypeSelect = form.querySelector('[name="sourceType"]');
+  const mealTypeSelect = form.querySelector('[name="mealType"]');
+  const timeInput = form.querySelector('[name="time"]');
+  let manualTime = Boolean(plan?.time);
+
+  const close = () => closeCalendarMealModal();
 
   const syncSourceFields = () => {
     const type = sourceTypeSelect.value;
-    form.querySelector('[data-recipe-select]').classList.toggle('hidden', type !== 'recipe');
-    form.querySelector('[data-restaurant-select]').classList.toggle('hidden', type !== 'restaurant');
-    form.querySelector('[data-custom-input]').classList.toggle('hidden', type !== 'custom');
+    form.querySelectorAll('[data-source-field]').forEach(field => {
+      field.classList.toggle('open', field.dataset.sourceField === type);
+    });
   };
 
   sourceTypeSelect.addEventListener('change', syncSourceFields);
-  wrapper.querySelector('[data-cancel-meal-form]').addEventListener('click', () => {
-    wrapper.innerHTML = '';
+  timeInput.addEventListener('input', () => {
+    manualTime = true;
   });
+  mealTypeSelect.addEventListener('change', () => {
+    if (!manualTime) timeInput.value = getDefaultMealTime(mealTypeSelect.value);
+  });
+
+  modal.querySelectorAll('[data-close-meal-modal], [data-cancel-meal-form]').forEach(button => {
+    button.addEventListener('click', close);
+  });
+
+  modal.addEventListener('pointerdown', event => {
+    if (event.target === modal) close();
+  });
+
+  const escapeHandler = event => {
+    if (event.key === 'Escape') close();
+  };
+  document.addEventListener('keydown', escapeHandler, { once: true });
+  modal.dataset.escapeBound = '1';
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -384,6 +429,7 @@ function openCalendarMealForm(date, plan = null) {
     const body = {
       date: data.date,
       mealType: data.mealType,
+      time: data.time || getDefaultMealTime(data.mealType),
       sourceType: data.sourceType,
       sourceId: data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null,
       customName: data.sourceType === 'custom' ? data.customName : '',
@@ -397,44 +443,76 @@ function openCalendarMealForm(date, plan = null) {
     }
     await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
     showToast('Meal saved.');
+    closeCalendarMealModal(true);
     renderPlanner();
   });
 
   syncSourceFields();
-  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  setTimeout(() => mealTypeSelect.focus(), 180);
+}
+
+function closeCalendarMealModal(removeImmediately = false) {
+  const modal = document.querySelector('#meal-time-modal');
+  if (!modal) return;
+  if (removeImmediately) {
+    modal.remove();
+    return;
+  }
+  modal.classList.remove('open');
+  modal.classList.add('closing');
+  setTimeout(() => modal.remove(), 180);
 }
 
 function calendarMealForm(date, plan = null) {
   const sourceType = plan?.sourceType || 'custom';
   const selectedRecipeId = sourceType === 'recipe' ? String(plan?.sourceId || '') : '';
   const selectedRestaurantId = sourceType === 'restaurant' ? String(plan?.sourceId || '') : '';
+  const selectedMealType = plan?.mealType || 'dinner';
+  const selectedTime = plan?.time || getDefaultMealTime(selectedMealType);
 
   return `
     <form class="slot-form calendar-meal-form">
       <input type="hidden" name="date" value="${date}" />
       <input type="hidden" name="planId" value="${escapeAttr(plan?._id || '')}" />
       <input type="hidden" name="originalMealType" value="${escapeAttr(plan?.mealType || '')}" />
-      <label>Meal Label
-        <select name="mealType">
-          ${mealTypes.map(type => option(type, titleCase(type), plan?.mealType || 'dinner')).join('')}
-        </select>
-      </label>
-      <label>Meal Source
-        <select name="sourceType">
-          ${option('custom', 'Custom', sourceType)}
-          ${option('recipe', 'Recipe', sourceType)}
-          ${option('restaurant', 'Restaurant', sourceType)}
-        </select>
-      </label>
-      <select name="recipeId" data-recipe-select class="${sourceType !== 'recipe' ? 'hidden' : ''}">
-        <option value="">Select recipe</option>
-        ${state.recipes.map(recipe => option(recipe._id, recipe.name, selectedRecipeId)).join('')}
-      </select>
-      <select name="restaurantId" data-restaurant-select class="${sourceType !== 'restaurant' ? 'hidden' : ''}">
-        <option value="">Select restaurant</option>
-        ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, selectedRestaurantId)).join('')}
-      </select>
-      <input name="customName" data-custom-input class="${sourceType !== 'custom' ? 'hidden' : ''}" placeholder="Custom meal" value="${escapeAttr(plan?.customName || '')}" />
+      <div class="form-grid compact-form-grid">
+        <label>Meal Label
+          <select name="mealType">
+            ${mealTypes.map(type => option(type, titleCase(type), selectedMealType)).join('')}
+          </select>
+        </label>
+        <label>Time
+          <input name="time" type="time" value="${escapeAttr(selectedTime)}" />
+        </label>
+        <label class="wide">Meal Source
+          <select name="sourceType">
+            ${option('custom', 'Custom', sourceType)}
+            ${option('recipe', 'Recipe', sourceType)}
+            ${option('restaurant', 'Restaurant', sourceType)}
+          </select>
+        </label>
+      </div>
+      <div class="source-field-expander ${sourceType === 'recipe' ? 'open' : ''}" data-source-field="recipe">
+        <div class="source-field-inner">
+          <select name="recipeId" data-recipe-select>
+            <option value="">Select recipe</option>
+            ${state.recipes.map(recipe => option(recipe._id, recipe.name, selectedRecipeId)).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="source-field-expander ${sourceType === 'restaurant' ? 'open' : ''}" data-source-field="restaurant">
+        <div class="source-field-inner">
+          <select name="restaurantId" data-restaurant-select>
+            <option value="">Select restaurant</option>
+            ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, selectedRestaurantId)).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="source-field-expander ${sourceType === 'custom' ? 'open' : ''}" data-source-field="custom">
+        <div class="source-field-inner">
+          <input name="customName" data-custom-input placeholder="Custom meal" value="${escapeAttr(plan?.customName || '')}" />
+        </div>
+      </div>
       <label>Status
         <select name="status">
           ${option('planned', 'Planned', plan?.status || 'planned')}
@@ -443,7 +521,7 @@ function calendarMealForm(date, plan = null) {
         </select>
       </label>
       <textarea name="notes" placeholder="Notes">${escapeHtml(plan?.notes || '')}</textarea>
-      <div class="action-row">
+      <div class="action-row modal-actions">
         <button class="primary" type="submit">Save Meal</button>
         <button class="ghost" type="button" data-cancel-meal-form>Cancel</button>
       </div>
@@ -455,7 +533,10 @@ function plannerMealItem(plan) {
   return `
     <article class="calendar-meal">
       <div class="calendar-meal-main">
-        <span class="badge accent">${escapeHtml(plan.mealType)}</span>
+        <div class="badge-row">
+          <span class="badge accent">${escapeHtml(plan.mealType)}</span>
+          ${plan.time ? `<span class="badge">${formatMealTime(plan.time)}</span>` : ''}
+        </div>
         <strong>${escapeHtml(getPlanName(plan))}</strong>
         ${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}
       </div>
@@ -530,7 +611,7 @@ function renderRestaurants() {
           <label class="wide">Location or Link<input name="location" placeholder="Address, Google Maps, DoorDash link" /></label>
           <label>Favorite Dishes<input name="favoriteDishes" placeholder="wings, tacos, ramen" /></label>
           <label>Tags<input name="tags" placeholder="late night, cheap, delivery" /></label>
-          <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+          <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" /> Favorite</label>
         </div>
         <button class="primary full" type="submit">Save Restaurant</button>
       </form>
@@ -743,6 +824,7 @@ function renderStats() {
 async function renderSettings() {
   const data = await api('/api/household');
   const activeAccent = getStoredAccentColor();
+  const activeTheme = getStoredTheme();
   pageRoot.innerHTML = `
     <section class="grid two">
       <article class="card">
@@ -760,6 +842,14 @@ async function renderSettings() {
               <span>${color}</span>
             </button>
           `).join('')}
+        </div>
+      </article>
+      <article class="card">
+        <h3>Appearance</h3>
+        <p class="muted">Switch between light and dark mode for the app shell.</p>
+        <div class="theme-toggle" role="group" aria-label="Theme options">
+          <button class="theme-option ${activeTheme === 'light' ? 'active' : ''}" type="button" data-theme-option="light">Light</button>
+          <button class="theme-option ${activeTheme === 'dark' ? 'active' : ''}" type="button" data-theme-option="dark">Dark</button>
         </div>
       </article>
       <article class="card">
@@ -782,6 +872,18 @@ async function renderSettings() {
       requestAnimationFrame(updateActiveNavHover);
     });
   });
+
+  pageRoot.querySelectorAll('[data-theme-option]').forEach(button => {
+    button.addEventListener('click', () => {
+      const theme = button.dataset.themeOption;
+      if (!['light', 'dark'].includes(theme)) return;
+      localStorage.setItem('mealPlannerTheme', theme);
+      applyTheme(theme);
+      pageRoot.querySelectorAll('[data-theme-option]').forEach(item => item.classList.toggle('active', item.dataset.themeOption === theme));
+      showToast(`${titleCase(theme)} mode enabled.`);
+      requestAnimationFrame(updateActiveNavHover);
+    });
+  });
 }
 
 function kpiCard(label, value, subtext) {
@@ -789,7 +891,7 @@ function kpiCard(label, value, subtext) {
 }
 
 function mealPlanSummary(plan) {
-  return `<div class="list-item"><div class="list-title"><strong>${titleCase(plan.mealType)}</strong><span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : 'accent'}">${plan.status}</span></div><p>${escapeHtml(getPlanName(plan))}</p>${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}</div>`;
+  return `<div class="list-item"><div class="list-title"><strong>${titleCase(plan.mealType)}${plan.time ? ` · ${formatMealTime(plan.time)}` : ''}</strong><span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : 'accent'}">${plan.status}</span></div><p>${escapeHtml(getPlanName(plan))}</p>${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}</div>`;
 }
 
 function suggestionItem(item) {
@@ -933,6 +1035,70 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/'/g, '&#39;');
 }
 
+
+
+function getDefaultMealTime(mealType) {
+  if (mealType === 'breakfast') return '08:00';
+  if (mealType === 'lunch') return '12:30';
+  return '18:30';
+}
+
+function formatMealTime(value) {
+  if (!value) return '';
+  const [hour, minute] = String(value).split(':').map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return value;
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function getStoredTheme() {
+  const saved = localStorage.getItem('mealPlannerTheme');
+  return saved === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+  const safeTheme = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = safeTheme;
+}
+
+let tactileAudioContext = null;
+let lastTactileSoundAt = 0;
+
+function bindTactileSounds() {
+  document.addEventListener('pointerdown', event => {
+    const target = event.target.closest('button, .nav-item, input[type="checkbox"]');
+    if (!target || target.disabled) return;
+    playTactileSound();
+  }, { capture: true });
+}
+
+function playTactileSound() {
+  const now = performance.now();
+  if (now - lastTactileSoundAt < 45) return;
+  lastTactileSoundAt = now;
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  tactileAudioContext ||= new AudioContextClass();
+
+  const context = tactileAudioContext;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  const start = context.currentTime;
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(420, start);
+  oscillator.frequency.exponentialRampToValueAtTime(220, start + 0.035);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(0.025, start + 0.006);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.055);
+
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(start);
+  oscillator.stop(start + 0.06);
+}
 
 function getStoredAccentColor() {
   const saved = localStorage.getItem('mealPlannerAccentColor');

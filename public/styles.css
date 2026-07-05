@@ -1084,3 +1084,211 @@ textarea:focus {
   }
 }
 
+
+/* Theme, spacing, modal, and expansion updates */
+:root[data-theme="dark"] {
+  --brand-light: rgba(46, 204, 113, 0.16);
+  --brand-border: rgba(46, 204, 113, 0.28);
+  --white: #171922;
+  --dark: #f6f7fb;
+  --text-primary: #f6f7fb;
+  --text-secondary: #b9c0cd;
+  --text-tertiary: #7f8898;
+  --border: #282c38;
+  --border-mid: #343948;
+  --surface: #101219;
+  --bg: #0b0d12;
+  --line: var(--border);
+  --panel: var(--white);
+  --panel-2: var(--surface);
+  --panel-3: var(--brand-light);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .primary,
+:root[data-theme="dark"] .tab.active,
+:root[data-theme="dark"] .brand-mark,
+:root[data-theme="dark"] .banner-tagline,
+:root[data-theme="dark"] .calendar-add-btn {
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .toast {
+  background: rgba(30, 240, 18, 0.12);
+  border-color: rgba(30, 240, 18, 0.28);
+  color: #baffb5;
+}
+
+:root[data-theme="dark"] .card:hover,
+:root[data-theme="dark"] .form-card:hover,
+:root[data-theme="dark"] .slot:hover,
+:root[data-theme="dark"] .stat-card:hover,
+:root[data-theme="dark"] .calendar-day:hover {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  border-color: #3b4252;
+}
+
+:root[data-theme="dark"] .accent-swatch::before {
+  border-color: #0b0d12;
+}
+
+.form-card > .form-grid + .primary.full,
+.form-card > .form-grid + button.primary.full {
+  margin-top: 12px;
+}
+
+.restaurant-favorite {
+  padding-bottom: 4px;
+}
+
+.theme-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--surface);
+}
+
+.theme-option {
+  min-height: 34px;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  transition: transform 0.14s, background 0.14s, color 0.14s;
+}
+
+.theme-option:hover,
+.theme-option.active {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.theme-option:hover {
+  transform: translateY(-1px);
+}
+
+.time-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 82px 16px 24px;
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.time-modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.time-modal-overlay.closing {
+  opacity: 0;
+}
+
+.time-modal-card {
+  width: min(430px, 100%);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--modal-radius);
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.14);
+  transform: translateY(-10px) scale(0.98);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
+}
+
+.time-modal-overlay.open .time-modal-card {
+  transform: translateY(0) scale(1);
+}
+
+.time-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.time-modal-header h3 {
+  margin: 0 0 3px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.modal-close-btn {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.time-modal-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.time-modal-overlay.open .time-modal-body {
+  grid-template-rows: 1fr;
+}
+
+.time-modal-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.compact-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.source-field-expander {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.source-field-expander.open {
+  grid-template-rows: 1fr;
+}
+
+.source-field-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-meal-form {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.modal-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 780px) {
+  .time-modal-overlay {
+    align-items: flex-end;
+    padding: 16px 12px;
+  }
+
+  .time-modal-card {
+    width: 100%;
+  }
+
+  .compact-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

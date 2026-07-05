@@ -99,6 +99,7 @@ const mealPlanSchema = new mongoose.Schema({
   householdId: { type: objectId, ref: 'Household', required: true, index: true },
   date: { type: String, required: true, index: true },
   mealType: { type: String, enum: ['breakfast', 'lunch', 'dinner'], required: true },
+  time: { type: String, default: '', trim: true },
   sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom'], default: 'custom' },
   sourceId: { type: objectId, default: null },
   customName: { type: String, default: '', trim: true },
@@ -539,7 +540,7 @@ app.get('/api/planner', authenticate, async (req, res) => {
 
 app.put('/api/planner/slot', authenticate, async (req, res) => {
   try {
-    const { date, mealType, sourceType, sourceId, customName, status, notes } = req.body;
+    const { date, mealType, time, sourceType, sourceId, customName, status, notes } = req.body;
     if (!date || !mealType) return res.status(400).json({ error: 'date and mealType are required.' });
 
     const plan = await MealPlan.findOneAndUpdate(
@@ -548,6 +549,7 @@ app.put('/api/planner/slot', authenticate, async (req, res) => {
         householdId: req.householdId,
         date,
         mealType,
+        time: time || '',
         sourceType: sourceType || 'custom',
         sourceId: sourceId || null,
         customName: customName || '',
