@@ -396,6 +396,7 @@ function openCalendarMealForm(date, plan = null) {
     </div>
   `;
 
+  document.body.classList.add('modal-open');
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('open'));
 
@@ -466,14 +467,21 @@ function openCalendarMealForm(date, plan = null) {
 
 function closeCalendarMealModal(removeImmediately = false) {
   const modal = document.querySelector('#meal-time-modal');
-  if (!modal) return;
+  if (!modal) {
+    document.body.classList.remove('modal-open');
+    return;
+  }
   if (removeImmediately) {
     modal.remove();
+    document.body.classList.remove('modal-open');
     return;
   }
   modal.classList.remove('open');
   modal.classList.add('closing');
-  setTimeout(() => modal.remove(), 180);
+  setTimeout(() => {
+    modal.remove();
+    document.body.classList.remove('modal-open');
+  }, 180);
 }
 
 function calendarMealForm(date, plan = null) {
@@ -1255,18 +1263,22 @@ function avatarMarkup(user, variant = '') {
 function syncUserAvatarUI() {
   const name = state.user?.name || 'User';
   const profilePic = state.user?.profilePic || '';
-  const nameEl = $('#topnav-user-name');
-  const imageEl = $('#topnav-avatar-img');
-  const fallbackEl = $('#topnav-avatar-fallback');
-  if (nameEl) nameEl.textContent = name;
-  if (imageEl) {
-    imageEl.src = profilePic;
-    imageEl.classList.toggle('hidden', !profilePic);
-  }
-  if (fallbackEl) {
-    fallbackEl.textContent = escapeInitials(name).replace(/&amp;/g, '&');
-    fallbackEl.classList.toggle('hidden', Boolean(profilePic));
-  }
+  const avatarTargets = [
+    { name: $('#topnav-user-name'), image: $('#topnav-avatar-img'), fallback: $('#topnav-avatar-fallback') },
+    { name: $('#mobile-sidebar-user-name'), image: $('#mobile-sidebar-avatar-img'), fallback: $('#mobile-sidebar-avatar-fallback') }
+  ];
+
+  avatarTargets.forEach(target => {
+    if (target.name) target.name.textContent = name;
+    if (target.image) {
+      target.image.src = profilePic;
+      target.image.classList.toggle('hidden', !profilePic);
+    }
+    if (target.fallback) {
+      target.fallback.textContent = escapeInitials(name).replace(/&amp;/g, '&');
+      target.fallback.classList.toggle('hidden', Boolean(profilePic));
+    }
+  });
 }
 
 async function updateAccount(payload) {
@@ -1532,6 +1544,13 @@ function initializeMobileWebSidebar() {
   panelEdgeToggle.addEventListener('click', () => {
     if (!isMobileWebSidebarViewport()) return;
     setMobileWebSidebarOpen(!isSidebarOpen());
+  });
+
+  controlPanel.querySelectorAll('[data-mobile-drawer-close]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      setMobileWebSidebarOpen(false);
+    });
   });
 
   document.addEventListener('click', event => {

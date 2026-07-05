@@ -45,6 +45,12 @@
 
     <main id="app-shell" class="app-shell hidden">
       <header class="topnav">
+        <button class="panel-edge-toggle" id="panelEdgeToggle" type="button" aria-label="Open sidebar" aria-expanded="false">
+          <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </button>
+
         <div class="topnav-brand">
           <span class="topnav-logo-row"><span class="topnav-logo">HomePlate</span><span class="homeplate-logo-icon" aria-hidden="true"></span></span>
           <span class="topnav-sub" id="household-name">Meal Planner</span>
@@ -53,10 +59,27 @@
         <nav id="controlPanel" class="topnav-nav nav-list control-panel" aria-label="Main navigation">
           <div class="control-panel-content">
             <div class="control-panel-scroll-inner">
-              <div class="mobile-drawer-head" aria-hidden="true">
-                <span class="mobile-drawer-title"><span>HomePlate</span><span class="homeplate-logo-icon"></span></span>
-                <span class="mobile-drawer-sub">Navigation</span>
+              <div class="mobile-drawer-head">
+                <button class="mobile-drawer-close" type="button" data-mobile-drawer-close aria-label="Close sidebar">
+                  <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
+                <div class="mobile-drawer-brand">
+                  <span class="mobile-drawer-title"><span>HomePlate</span><span class="homeplate-logo-icon"></span></span>
+                  <span class="mobile-drawer-sub">Navigation</span>
+                </div>
               </div>
+              <button class="mobile-sidebar-profile" data-page="settings" type="button" aria-label="Open profile settings">
+                <span class="user-avatar user-avatar--drawer">
+                  <img id="mobile-sidebar-avatar-img" class="user-avatar-img hidden" alt="Profile picture" />
+                  <span id="mobile-sidebar-avatar-fallback" class="user-avatar-fallback">U</span>
+                </span>
+                <span class="mobile-sidebar-profile-text">
+                  <strong id="mobile-sidebar-user-name">User</strong>
+                  <span>Profile & Settings</span>
+                </span>
+              </button>
               <button class="nav-item active" data-page="planner" type="button"><i class="ti ti-calendar-week"></i><span>Planner</span></button>
               <button class="nav-item" data-page="dashboard" type="button"><i class="ti ti-layout-dashboard"></i><span>Dashboard</span></button>
               <button class="nav-item" data-page="recipes" type="button"><i class="ti ti-book-2"></i><span>Recipes</span></button>
@@ -79,12 +102,6 @@
           </button>
         </div>
       </header>
-
-      <button class="panel-edge-toggle" id="panelEdgeToggle" type="button" aria-label="Open sidebar" aria-expanded="false">
-        <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-        </svg>
-      </button>
 
       <section class="content-panel">
         <header class="topbar toolbar">

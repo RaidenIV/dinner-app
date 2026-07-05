@@ -2291,3 +2291,233 @@ body.mobile-drawer-open .panel-edge-toggle {
     top: calc(var(--mobile-app-bar-height, 64px) + 10px);
   }
 }
+
+/* Requested desktop banner and mobile drawer corrections */
+@media (min-width: 981px) {
+  .content-panel > .topbar.toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .content-panel > .topbar.toolbar .toolbar-left {
+    justify-self: start;
+    min-width: 0;
+  }
+
+  .content-panel > .topbar.toolbar .banner-area {
+    justify-self: center;
+  }
+
+  .content-panel > .topbar.toolbar .topbar-actions {
+    justify-self: end;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  body.mobile-drawer-open,
+  body.mobile-sidebar-open,
+  body.modal-open {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+
+  body.mobile-drawer-open .content-panel,
+  body.mobile-sidebar-open .content-panel,
+  body.modal-open .content-panel {
+    max-height: calc(100dvh - var(--mobile-app-bar-height, 58px)) !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+
+  body.modal-open .time-modal-overlay,
+  body.modal-open .time-modal-card {
+    touch-action: pan-y !important;
+  }
+
+  .topnav,
+  body.mobile-drawer-open .topnav,
+  body.mobile-sidebar-open .topnav {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 240 !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  body.mobile-drawer-open .app-shell::after,
+  body.mobile-sidebar-open .app-shell::after {
+    z-index: 180 !important;
+  }
+
+  body.mobile-drawer-open .topnav-brand,
+  body.mobile-drawer-open .topnav-right,
+  body.mobile-sidebar-open .topnav-brand,
+  body.mobile-sidebar-open .topnav-right {
+    pointer-events: none;
+  }
+
+  .panel-edge-toggle,
+  body:not(.control-panel-is-collapsed) .panel-edge-toggle,
+  body.control-panel-is-collapsed .panel-edge-toggle,
+  body.mobile-drawer-open .panel-edge-toggle,
+  body.mobile-sidebar-open .panel-edge-toggle {
+    position: static !important;
+    display: inline-flex !important;
+    visibility: visible !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 2.4rem !important;
+    height: 2.4rem !important;
+    min-width: 2.4rem !important;
+    min-height: 2.4rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0.82rem !important;
+    z-index: 260 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transform: none !important;
+  }
+
+  .topnav-brand {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  .topnav-right {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+  }
+
+  .control-panel.topnav-nav,
+  .control-panel.topnav-nav.collapsed,
+  body.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    z-index: 250 !important;
+  }
+
+  body.mobile-drawer-open .control-panel.topnav-nav,
+  body.mobile-drawer-open .control-panel.topnav-nav.collapsed,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open .control-panel.topnav-nav,
+  body.mobile-sidebar-open .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    z-index: 250 !important;
+    pointer-events: auto !important;
+  }
+
+  .mobile-drawer-head {
+    display: grid !important;
+    grid-template-columns: 2.35rem minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 5px 4px 14px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-drawer-brand {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mobile-drawer-close {
+    width: 2.35rem;
+    height: 2.35rem;
+    min-width: 2.35rem;
+    min-height: 2.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.82rem;
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--text-primary);
+  }
+
+  .mobile-drawer-close:hover,
+  .mobile-drawer-close:focus-visible {
+    color: var(--brand);
+    border-color: var(--brand-border);
+    background: var(--brand-light);
+  }
+
+  .mobile-drawer-close svg {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .mobile-sidebar-profile {
+    width: 100%;
+    min-height: 64px;
+    margin: 0 0 8px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .mobile-sidebar-profile:hover,
+  .mobile-sidebar-profile.active {
+    color: var(--brand);
+    border-color: var(--brand-border);
+    background: var(--brand-light);
+  }
+
+  .user-avatar--drawer {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+  }
+
+  .mobile-sidebar-profile-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mobile-sidebar-profile-text strong {
+    max-width: 100%;
+    overflow: hidden;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-sidebar-profile-text span {
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+}
+
+@media (min-width: 981px) {
+  .mobile-sidebar-profile {
+    display: none !important;
+  }
+}
