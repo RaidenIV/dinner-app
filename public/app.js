@@ -1441,24 +1441,11 @@ function renderPanelEdgeToggleIcon(isOpen) {
   const panelEdgeToggle = document.getElementById('panelEdgeToggle');
   if (!panelEdgeToggle) return;
 
-  if (isMobileWebSidebarViewport()) {
-    panelEdgeToggle.innerHTML = isOpen
-      ? `<svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>`
-      : `<svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-        </svg>`;
-    panelEdgeToggle.setAttribute('aria-label', isOpen ? 'Close sidebar' : 'Open sidebar');
-    panelEdgeToggle.setAttribute('aria-expanded', String(isOpen));
-    return;
-  }
-
   panelEdgeToggle.innerHTML = `<svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
     </svg>`;
-  panelEdgeToggle.setAttribute('aria-label', 'Open sidebar');
-  panelEdgeToggle.setAttribute('aria-expanded', 'false');
+  panelEdgeToggle.setAttribute('aria-label', isOpen && isMobileWebSidebarViewport() ? 'Sidebar open' : 'Open sidebar');
+  panelEdgeToggle.setAttribute('aria-expanded', String(Boolean(isOpen) && isMobileWebSidebarViewport()));
 }
 
 function scrollMobileWebSidebarToTop() {
@@ -1541,14 +1528,17 @@ function initializeMobileWebSidebar() {
     renderPanelEdgeToggleIcon(isSidebarOpen());
   };
 
-  panelEdgeToggle.addEventListener('click', () => {
+  panelEdgeToggle.addEventListener('click', event => {
     if (!isMobileWebSidebarViewport()) return;
+    event.preventDefault();
+    event.stopPropagation();
     setMobileWebSidebarOpen(!isSidebarOpen());
   });
 
   controlPanel.querySelectorAll('[data-mobile-drawer-close]').forEach(button => {
     button.addEventListener('click', event => {
       event.preventDefault();
+      event.stopPropagation();
       setMobileWebSidebarOpen(false);
     });
   });
