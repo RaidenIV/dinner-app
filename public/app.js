@@ -197,6 +197,38 @@ async function api(path, options = {}) {
   return data;
 }
 
+function getFormCheckboxChecked(form, name) {
+  const field = form?.elements?.[name];
+  if (!field) return false;
+  if (typeof RadioNodeList !== 'undefined' && field instanceof RadioNodeList) return Boolean([...field].find(item => item.checked));
+  return Boolean(field.checked);
+}
+
+async function withSaveFeedback(form, action, successMessage = 'Saved.') {
+  const submitButton = form?.querySelector?.('[type="submit"]');
+  const originalHtml = submitButton?.innerHTML;
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.setAttribute('aria-busy', 'true');
+    submitButton.innerHTML = 'Saving...';
+  }
+
+  try {
+    const result = await action();
+    if (successMessage) showToast(successMessage);
+    return result;
+  } catch (error) {
+    showToast(error.message || 'Save failed. Please try again.');
+    return null;
+  } finally {
+    if (submitButton?.isConnected) {
+      submitButton.disabled = false;
+      submitButton.removeAttribute('aria-busy');
+      submitButton.innerHTML = originalHtml;
+    }
+  }
+}
+
 async function loadRecipes() {
   state.recipes = await api('/api/recipes');
 }
@@ -439,26 +471,28 @@ function openCalendarMealForm(date, plan = null) {
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget));
-    const body = {
-      date: data.date,
-      mealType: data.mealType,
-      time: data.time || getDefaultMealTime(data.mealType),
-      sourceType: data.sourceType,
-      sourceId: data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null,
-      customName: data.sourceType === 'custom' ? data.customName : '',
-      status: data.status,
-      notes: data.notes
-    };
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const data = Object.fromEntries(new FormData(formElement));
+      const body = {
+        date: data.date,
+        mealType: data.mealType,
+        time: data.time || getDefaultMealTime(data.mealType),
+        sourceType: data.sourceType,
+        sourceId: data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null,
+        customName: data.sourceType === 'custom' ? data.customName : '',
+        status: data.status,
+        notes: data.notes
+      };
 
-    await api('/api/planner/slot', { method: 'PUT', body });
-    if (data.planId && data.originalMealType && data.originalMealType !== data.mealType) {
-      await api(`/api/planner/${data.planId}`, { method: 'DELETE' });
-    }
-    await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
-    showToast('Meal saved.');
-    closeCalendarMealModal(true);
-    renderPlanner();
+      await api('/api/planner/slot', { method: 'PUT', body });
+      if (data.planId && data.originalMealType && data.originalMealType !== data.mealType) {
+        await api(`/api/planner/${data.planId}`, { method: 'DELETE' });
+      }
+      await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
+      closeCalendarMealModal(true);
+      renderPlanner();
+    }, 'Meal saved.');
   });
 
   syncSourceFields();
@@ -600,13 +634,15 @@ function renderRecipes() {
 
   $('#recipe-form').addEventListener('submit', async event => {
     event.preventDefault();
-    const body = formToBody(event.currentTarget);
-    body.favorite = event.currentTarget.favorite.checked;
-    await api('/api/recipes', { method: 'POST', body });
-    event.currentTarget.reset();
-    await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
-    showToast('Recipe saved.');
-    renderRecipes();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = formToBody(formElement);
+      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      await api('/api/recipes', { method: 'POST', body });
+      formElement.reset();
+      await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+      renderRecipes();
+    }, 'Recipe saved.');
   });
 
   pageRoot.querySelectorAll('[data-delete-recipe]').forEach(button => {
@@ -656,13 +692,15 @@ function renderRestaurants() {
 
   $('#restaurant-form').addEventListener('submit', async event => {
     event.preventDefault();
-    const body = formToBody(event.currentTarget);
-    body.favorite = event.currentTarget.favorite.checked;
-    await api('/api/restaurants', { method: 'POST', body });
-    event.currentTarget.reset();
-    await Promise.all([loadRestaurants(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
-    showToast('Restaurant saved.');
-    renderRestaurants();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = formToBody(formElement);
+      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      await api('/api/restaurants', { method: 'POST', body });
+      formElement.reset();
+      await Promise.all([loadRestaurants(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+      renderRestaurants();
+    }, 'Restaurant saved.');
   });
 
   $('#random-restaurant-form').addEventListener('submit', async event => {
@@ -720,11 +758,13 @@ function renderGrocery() {
 
   $('#grocery-form').addEventListener('submit', async event => {
     event.preventDefault();
-    await api('/api/grocery', { method: 'POST', body: formToBody(event.currentTarget) });
-    event.currentTarget.reset();
-    await Promise.all([loadGrocery(), loadStats()]);
-    showToast('Grocery item added.');
-    renderGrocery();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      await api('/api/grocery', { method: 'POST', body: formToBody(formElement) });
+      formElement.reset();
+      await Promise.all([loadGrocery(), loadStats()]);
+      renderGrocery();
+    }, 'Grocery item added.');
   });
 
   $('#generate-grocery-here').addEventListener('click', async () => {
@@ -786,12 +826,14 @@ function renderHistory() {
 
   $('#history-form').addEventListener('submit', async event => {
     event.preventDefault();
-    const body = { ...formToBody(event.currentTarget), sourceType: 'custom' };
-    await api('/api/history', { method: 'POST', body });
-    event.currentTarget.reset();
-    await Promise.all([loadHistory(), loadStats(), loadSuggestions({ mealType: 'dinner' })]);
-    showToast('Meal history saved.');
-    renderHistory();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = { ...formToBody(formElement), sourceType: 'custom' };
+      await api('/api/history', { method: 'POST', body });
+      formElement.reset();
+      await Promise.all([loadHistory(), loadStats(), loadSuggestions({ mealType: 'dinner' })]);
+      renderHistory();
+    }, 'Meal history saved.');
   });
 
   pageRoot.querySelectorAll('[data-delete-history]').forEach(button => {
@@ -984,17 +1026,14 @@ async function renderSettings() {
   pageRoot.querySelector('#email-invite-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
-    const body = formToBody(form);
-    try {
+    await withSaveFeedback(form, async () => {
+      const body = formToBody(form);
       const result = await api('/api/household/invites', { method: 'POST', body });
       const inviteCode = result.invite?.inviteCode || data.household.inviteCode;
       const mailto = buildInviteMailto(result.invite?.email || body.email, result.householdName || data.household.name, inviteCode);
-      showToast(`Invite ready for ${result.invite?.email || body.email}.`);
       window.setTimeout(() => { window.location.href = mailto; }, 180);
       await renderSettings();
-    } catch (error) {
-      showToast(error.message || 'Unable to send invite.');
-    }
+    }, 'Invite ready.');
   });
 
   pageRoot.querySelector('.theme-toggle')?.addEventListener('click', () => {
