@@ -7,7 +7,7 @@ const plannerDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short'
 const fullDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
 const state = {
-  token: localStorage.getItem('mealPlannerToken') || '',
+  token: getStoredToken(),
   user: null,
   household: null,
   page: 'planner',
@@ -59,10 +59,13 @@ function bindAuth() {
   $('#login-form').addEventListener('submit', async event => {
     event.preventDefault();
     $('#auth-error').textContent = '';
-    const data = Object.fromEntries(new FormData(event.currentTarget));
+    const loginFormData = new FormData(event.currentTarget);
+    const rememberMe = loginFormData.get('rememberMe') === 'on';
+    const data = Object.fromEntries(loginFormData);
+    delete data.rememberMe;
     try {
       const result = await api('/api/auth/login', { method: 'POST', body: data, auth: false });
-      setSession(result);
+      setSession(result, rememberMe);
       await bootApp();
     } catch (error) {
       $('#auth-error').textContent = error.message;
@@ -166,11 +169,18 @@ function setActiveNav(page) {
   requestAnimationFrame(() => updateActiveNavHover());
 }
 
-function setSession(result) {
+function getStoredToken() {
+  return localStorage.getItem('mealPlannerToken') || sessionStorage.getItem('mealPlannerToken') || '';
+}
+
+function setSession(result, remember = true) {
   state.token = result.token;
   state.user = result.user;
   state.household = result.household;
-  localStorage.setItem('mealPlannerToken', result.token);
+  const storage = remember ? localStorage : sessionStorage;
+  const otherStorage = remember ? sessionStorage : localStorage;
+  otherStorage.removeItem('mealPlannerToken');
+  storage.setItem('mealPlannerToken', result.token);
 }
 
 function logout() {
@@ -178,6 +188,7 @@ function logout() {
   state.user = null;
   state.household = null;
   localStorage.removeItem('mealPlannerToken');
+  sessionStorage.removeItem('mealPlannerToken');
   authScreen.classList.remove('hidden');
   appShell.classList.add('hidden');
 }
@@ -614,7 +625,13 @@ function renderRecipes() {
           <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
           <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
           <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
-          <label>Prep Time<input name="prepTime" type="number" min="0" value="10" /></label>
+          <label>Prep Time
+            <span class="duration-clock" aria-label="Prep time duration">
+              <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+              <span class="duration-separator" aria-hidden="true">:</span>
+              <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+            </span>
+          </label>
           <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
           <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
           <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
@@ -637,6 +654,9 @@ function renderRecipes() {
     const formElement = event.currentTarget;
     await withSaveFeedback(formElement, async () => {
       const body = formToBody(formElement);
+      body.prepTime = durationInputsToMinutes(formElement, 'prep');
+      delete body.prepHours;
+      delete body.prepMinutes;
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
       await api('/api/recipes', { method: 'POST', body });
       formElement.reset();
@@ -1071,7 +1091,7 @@ function recipeItem(recipe) {
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
         ${recipe.favorite ? '<span class="badge good">favorite</span>' : ''}
       </div>
-      <p class="muted">${recipe.prepTime || 0}m prep • ${recipe.cookTime || 0}m cook • ${starRating(recipe.rating || 0)} • cooked ${recipe.timesCooked || 0}x</p>
+      <p class="muted">${formatDurationMinutes(recipe.prepTime || 0)} prep • ${formatDurationMinutes(recipe.cookTime || 0)} cook • ${starRating(recipe.rating || 0)} • cooked ${recipe.timesCooked || 0}x</p>
       ${(recipe.ingredients || []).length ? `<p>${recipe.ingredients.slice(0, 4).map(item => escapeHtml(item.name)).join(', ')}${recipe.ingredients.length > 4 ? '…' : ''}</p>` : ''}
     </div>
   `;
@@ -1156,6 +1176,23 @@ function starRating(value) {
   const rating = Math.max(0, Math.min(5, Math.round(Number(value) || 0)));
   const stars = '★'.repeat(rating);
   return `<span class="star-rating" aria-label="${rating} out of 5 stars">${stars}</span>`;
+}
+
+function durationInputsToMinutes(form, prefix) {
+  const hoursInput = form.querySelector(`[name="${prefix}Hours"]`);
+  const minutesInput = form.querySelector(`[name="${prefix}Minutes"]`);
+  const hours = Math.max(0, parseInt(hoursInput?.value || '0', 10) || 0);
+  const minutes = Math.max(0, Math.min(59, parseInt(minutesInput?.value || '0', 10) || 0));
+  return (hours * 60) + minutes;
+}
+
+function formatDurationMinutes(value) {
+  const total = Math.max(0, Math.round(Number(value) || 0));
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  if (hours && minutes) return `${hours}h ${minutes}m`;
+  if (hours) return `${hours}h`;
+  return `${minutes}m`;
 }
 
 function formToBody(form) {
