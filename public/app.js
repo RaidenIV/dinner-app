@@ -45,8 +45,8 @@ const appShell = $('#app-shell');
 init();
 
 function init() {
-  applyTheme(getStoredTheme());
-  applyAccentColor(getStoredAccentColor());
+  applyTheme('light');
+  applyAccentColor(defaultAccentColor);
   $('#today-label').textContent = fullDateFormatter.format(new Date());
   bindAuth();
   bindShell();
@@ -1762,8 +1762,6 @@ function renderStats() {
 
 async function renderSettings() {
   const data = await api('/api/household');
-  const activeAccent = getStoredAccentColor();
-  const activeTheme = getStoredTheme();
   pageRoot.innerHTML = `
     <section class="grid two">
       <article class="card">
@@ -1821,25 +1819,6 @@ async function renderSettings() {
         </form>
       </article>
       <article class="card">
-        <h3>Accent Color</h3>
-        <p class="muted">Choose the app accent color for buttons, badges, navigation, and highlights.</p>
-        <div class="accent-picker" aria-label="Accent color options">
-          ${accentColorOptions.map(color => `
-            <button class="accent-swatch ${color === activeAccent ? 'active' : ''}" type="button" data-accent-color="${color}" style="--swatch:${color}" aria-label="Use accent color ${color}">
-              <span>${color}</span>
-            </button>
-          `).join('')}
-        </div>
-      </article>
-      <article class="card">
-        <h3>Appearance</h3>
-        <p class="muted">Switch between light and dark mode for the app shell.</p>
-        <div class="theme-toggle" role="group" aria-label="Theme options" data-theme-toggle-state="${activeTheme}">
-          <button class="theme-option ${activeTheme === 'light' ? 'active' : ''}" type="button" data-theme-option="light">Light</button>
-          <button class="theme-option ${activeTheme === 'dark' ? 'active' : ''}" type="button" data-theme-option="dark">Dark</button>
-        </div>
-      </article>
-      <article class="card">
         <h3>Members</h3>
         <div class="list">
           ${data.members.map(member => `<div class="list-item member-list-item"><div class="member-identity">${avatarMarkup(member, 'member')}<div><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div></div></div>`).join('')}
@@ -1884,17 +1863,6 @@ async function renderSettings() {
     }
   });
 
-  pageRoot.querySelectorAll('[data-accent-color]').forEach(button => {
-    button.addEventListener('click', () => {
-      const color = button.dataset.accentColor;
-      if (!accentColorOptions.includes(color)) return;
-      localStorage.setItem('mealPlannerAccentColor', color);
-      applyAccentColor(color);
-      pageRoot.querySelectorAll('[data-accent-color]').forEach(item => item.classList.toggle('active', item.dataset.accentColor === color));
-      showToast(`Accent color updated to ${color}.`);
-      requestAnimationFrame(updateActiveNavHover);
-    });
-  });
 
   pageRoot.querySelector('#settings-logout-btn')?.addEventListener('click', logout);
 
@@ -1961,15 +1929,6 @@ async function renderSettings() {
     }, 'Joined household.');
   });
 
-  pageRoot.querySelector('.theme-toggle')?.addEventListener('click', () => {
-    const nextTheme = getStoredTheme() === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('mealPlannerTheme', nextTheme);
-    applyTheme(nextTheme);
-    const themeToggle = pageRoot.querySelector('.theme-toggle');
-    if (themeToggle) themeToggle.dataset.themeToggleState = nextTheme;
-    pageRoot.querySelectorAll('[data-theme-option]').forEach(item => item.classList.toggle('active', item.dataset.themeOption === nextTheme));
-    requestAnimationFrame(updateActiveNavHover);
-  });
 }
 
 function kpiCard(label, value, subtext) {
@@ -2780,8 +2739,7 @@ function formatMealTime(value) {
 }
 
 function getStoredTheme() {
-  const saved = localStorage.getItem('mealPlannerTheme');
-  return saved === 'dark' ? 'dark' : 'light';
+  return 'light';
 }
 
 function applyTheme(theme) {
@@ -2828,12 +2786,11 @@ function playTactileSound() {
 }
 
 function getStoredAccentColor() {
-  const saved = localStorage.getItem('mealPlannerAccentColor');
-  return accentColorOptions.includes(saved) ? saved : defaultAccentColor;
+  return defaultAccentColor;
 }
 
-function applyAccentColor(color) {
-  const accent = accentColorOptions.includes(color) ? color : defaultAccentColor;
+function applyAccentColor(color = defaultAccentColor) {
+  const accent = defaultAccentColor;
   const root = document.documentElement;
   root.style.setProperty('--brand', accent);
   root.style.setProperty('--brand-hover', shadeHex(accent, -12));

@@ -92,6 +92,33 @@ textarea,
   display: grid;
   place-items: center;
   padding: 24px;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.auth-screen::before {
+  content: '';
+  position: fixed;
+  width: min(860px, 92vw);
+  height: min(560px, 72vh);
+  border: 1px solid var(--border);
+  border-radius: 42px;
+  background: var(--white);
+  opacity: 0.72;
+  transform: rotate(-6deg);
+}
+
+.auth-screen::after {
+  content: '';
+  position: fixed;
+  right: max(-92px, -8vw);
+  bottom: max(-92px, -8vw);
+  width: clamp(190px, 26vw, 340px);
+  height: clamp(190px, 26vw, 340px);
+  border: clamp(24px, 4vw, 44px) solid var(--brand-light);
+  border-radius: 9999px;
+  opacity: 0.9;
 }
 
 .auth-card {
@@ -101,6 +128,8 @@ textarea,
   border-radius: var(--modal-radius);
   background: var(--white);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+  position: relative;
+  z-index: 1;
 }
 
 .brand-mark {
@@ -1379,7 +1408,7 @@ textarea:focus {
     gap: 10px;
   }
 
-  .auth-card {
+ .auth-card {
     padding: 20px;
   }
 
@@ -1739,7 +1768,7 @@ textarea:focus {
     align-items: start;
   }
 
-  .auth-card {
+ .auth-card {
     margin-top: 10px;
     padding: 18px;
     border-radius: 16px;
