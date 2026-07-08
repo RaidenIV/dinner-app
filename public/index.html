@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HomePlate Planner</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="auth-screen" class="auth-screen">
+      <section class="auth-card">
+        <div class="brand-mark">HP</div>
+        <p class="eyebrow">Shared Household Planner</p>
+        <div class="auth-title-row"><h1>HomePlate</h1><span class="homeplate-logo-icon" aria-hidden="true"></span></div>
+        <p class="muted">Plan the week, pick restaurants, organize recipes, and keep the grocery list in sync.</p>
+
+        <div class="auth-tabs">
+          <button class="tab active" data-auth-tab="login" type="button">Log In</button>
+          <button class="tab" data-auth-tab="signup" type="button">Sign Up</button>
+        </div>
+
+        <form id="login-form" class="auth-form">
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+          <label class="checkbox-line remember-line"><input name="rememberMe" type="checkbox" checked /> Remember me</label>
+          <button type="submit" class="primary full">Log In</button>
+        </form>
+
+        <form id="signup-form" class="auth-form hidden">
+          <label>Name<input name="name" type="text" autocomplete="name" required /></label>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
+          <label>Household Name<input name="householdName" type="text" placeholder="Evans Home" /></label>
+          <label>Invite Code <span class="optional">optional</span><input name="inviteCode" type="text" placeholder="Join an existing household" /></label>
+          <button type="submit" class="primary full">Create Account</button>
+        </form>
+
+        <p id="auth-error" class="error-text" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <main id="app-shell" class="app-shell hidden">
+      <header class="topnav">
+        <button class="panel-edge-toggle" id="panelEdgeToggle" type="button" aria-label="Open sidebar" aria-expanded="false">
+          <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </button>
+
+        <div class="topnav-brand">
+          <span class="topnav-logo-row"><span class="topnav-logo">HomePlate</span><span class="homeplate-logo-icon" aria-hidden="true"></span></span>
+          <span class="topnav-sub" id="household-name">Meal Planner</span>
+        </div>
+
+        <nav id="controlPanel" class="topnav-nav nav-list control-panel" aria-label="Main navigation">
+          <div class="control-panel-content">
+            <div class="control-panel-scroll-inner">
+              <div class="mobile-drawer-head">
+                <button class="mobile-drawer-close" type="button" data-mobile-drawer-close aria-label="Close sidebar">
+                  <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
+                <div class="mobile-drawer-brand">
+                  <span class="mobile-drawer-title"><span>HomePlate</span><span class="homeplate-logo-icon"></span></span>
+                  <span class="mobile-drawer-sub">Navigation</span>
+                </div>
+              </div>
+              <button class="mobile-sidebar-profile" data-page="settings" type="button" aria-label="Open profile settings">
+                <span class="user-avatar user-avatar--drawer">
+                  <img id="mobile-sidebar-avatar-img" class="user-avatar-img hidden" alt="Profile picture" />
+                  <span id="mobile-sidebar-avatar-fallback" class="user-avatar-fallback">U</span>
+                </span>
+                <span class="mobile-sidebar-profile-text">
+                  <strong id="mobile-sidebar-user-name">User</strong>
+                  <span>Profile & Settings</span>
+                </span>
+              </button>
+              <button class="nav-item active" data-page="planner" type="button"><i class="ti ti-calendar-week"></i><span>Planner</span></button>
+              <button class="nav-item" data-page="dashboard" type="button"><i class="ti ti-layout-dashboard"></i><span>Dashboard</span></button>
+              <button class="nav-item" data-page="recipes" type="button"><i class="ti ti-book-2"></i><span>Recipes</span></button>
+              <button class="nav-item" data-page="restaurants" type="button"><i class="ti ti-tools-kitchen-2"></i><span>Restaurants</span></button>
+              <button class="nav-item" data-page="grocery" type="button"><i class="ti ti-shopping-cart"></i><span>Grocery</span></button>
+              <button class="nav-item" data-page="history" type="button"><i class="ti ti-history"></i><span>History</span></button>
+              <button class="nav-item" data-page="stats" type="button"><i class="ti ti-chart-bar"></i><span>Stats</span></button>
+              <button class="nav-item" data-page="settings" type="button"><i class="ti ti-settings"></i><span>Settings</span></button>
+            </div>
+          </div>
+        </nav>
+
+        <div class="topnav-right">
+          <button id="user-avatar-btn" class="user-pill" type="button" aria-label="Open profile settings">
+            <span class="user-avatar user-avatar--nav">
+              <img id="topnav-avatar-img" class="user-avatar-img hidden" alt="Profile picture" />
+              <span id="topnav-avatar-fallback" class="user-avatar-fallback">U</span>
+            </span>
+            <span id="topnav-user-name" class="user-pill-name">User</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="content-panel">
+        <header class="topbar toolbar">
+          <div class="toolbar-left">
+            <div class="toolbar-text">
+              <p class="eyebrow" id="today-label"></p>
+              <h2 id="page-title" class="toolbar-title">Dashboard</h2>
+            </div>
+          </div>
+          <div class="banner-area">
+            <span class="banner-tagline">Decide Dinner Without The Debate</span>
+          </div>
+          <div class="topbar-actions toolbar-right">
+            <button id="quick-suggest-btn" class="secondary" type="button"><i class="ti ti-bulb"></i>Suggest Dinner</button>
+            <button id="quick-random-btn" class="primary" type="button"><i class="ti ti-dice-5"></i>Pick Restaurant</button>
+          </div>
+        </header>
+
+        <section id="toast" class="toast hidden" aria-live="polite"></section>
+        <section id="page-root" class="page-root"></section>
+        <footer class="developer-footer" aria-label="Developer logo">
+          <span class="developer-logo-wrap">
+            <img class="developer-logo" src="/assets/white.svg" alt="Developer logo" />
+          </span>
+        </footer>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
