@@ -118,6 +118,7 @@ const restaurantSchema = new mongoose.Schema({
   tags: [{ type: String, trim: true }],
   rating: { type: Number, min: 0, max: 5, default: 0 },
   favorite: { type: Boolean, default: false },
+  wantToGo: { type: Boolean, default: false },
   timesVisited: { type: Number, default: 0, min: 0 },
   lastVisitedAt: { type: Date },
   createdBy: { type: objectId, ref: 'User' }
@@ -769,6 +770,7 @@ app.post('/api/restaurants', authenticate, async (req, res) => {
       tags: normalizeTags(req.body.tags),
       rating: Number(req.body.rating || 0),
       favorite: Boolean(req.body.favorite),
+      wantToGo: Boolean(req.body.wantToGo),
       createdBy: req.user._id
     });
     broadcastHouseholdUpdate(req, 'restaurants:created', { restaurantId: restaurant._id.toString() });
@@ -788,7 +790,8 @@ app.put('/api/restaurants/:id', authenticate, async (req, res) => {
     favoriteDishes: normalizeTags(req.body.favoriteDishes),
     tags: normalizeTags(req.body.tags),
     rating: Number(req.body.rating || 0),
-    favorite: Boolean(req.body.favorite)
+    favorite: Boolean(req.body.favorite),
+    wantToGo: Boolean(req.body.wantToGo)
   };
   const restaurant = await Restaurant.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });

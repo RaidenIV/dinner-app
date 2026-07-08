@@ -4394,3 +4394,93 @@ textarea,
     border-radius: 18px;
   }
 }
+
+/* Current request: Want To Go restaurants and tag modal layering fix */
+.want-to-go-section {
+  display: grid;
+  gap: 12px;
+}
+
+.want-to-go-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.want-to-go-item {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.want-to-go-item strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.want-to-go-item a,
+.want-to-go-item span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.want-to-go-item a:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.restaurant-want-toggle {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.restaurant-want-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--brand);
+}
+
+.restaurant-want-to-go {
+  margin-top: -2px;
+}
+
+.random-restaurant-card.slot-tag-modal-active .slot-machine-form {
+  z-index: 500;
+}
+
+.random-restaurant-card.slot-tag-modal-active .slot-machine-result {
+  z-index: 0;
+}
+
+.slot-tag-modal {
+  z-index: 10000 !important;
+}
+
+.slot-tag-modal.open .slot-tag-modal-card {
+  position: relative;
+  z-index: 10001;
+}
+
+@media (max-width: 620px) {
+  .want-to-go-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1376,6 +1376,9 @@ function openRecipeScan(recipe) {
 
 function renderRestaurants() {
   const sortedRestaurants = getSortedRestaurants();
+  const wantToGoRestaurants = state.restaurants
+    .filter(restaurant => restaurant.wantToGo)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
   pageRoot.innerHTML = `
     <section class="grid two">
       <form id="restaurant-form" class="form-card">
@@ -1390,6 +1393,7 @@ function renderRestaurants() {
           <label>Favorite Dishes<input name="favoriteDishes" placeholder="wings, tacos, ramen" /></label>
           <label>Tags<input name="tags" placeholder="late night, cheap, delivery" /></label>
           <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" /> Favorite</label>
+          <label class="wide checkbox-line restaurant-want-to-go"><input type="checkbox" name="wantToGo" /> Want To Go</label>
         </div>
         <button class="primary full" type="submit">Save Restaurant</button>
       </form>
@@ -1430,6 +1434,17 @@ function renderRestaurants() {
         </div>
       </article>
     </section>
+    <section class="card want-to-go-section">
+      <div class="section-head restaurant-list-head">
+        <div>
+          <h3>Want To Go</h3>
+          <p class="muted">${wantToGoRestaurants.length} saved ${wantToGoRestaurants.length === 1 ? 'spot' : 'spots'}</p>
+        </div>
+      </div>
+      <div class="want-to-go-list">
+        ${wantToGoRestaurants.length ? wantToGoRestaurants.map(wantToGoRestaurantItem).join('') : '<div class="empty compact">Mark restaurants as Want To Go to build this list.</div>'}
+      </div>
+    </section>
     <section class="card restaurant-list-section">
       <div class="section-head restaurant-list-head">
         <div>
@@ -1455,6 +1470,7 @@ function renderRestaurants() {
       const body = formToBody(formElement);
       body.cuisine = collectRestaurantCuisines(formElement);
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      body.wantToGo = getFormCheckboxChecked(formElement, 'wantToGo');
       await api('/api/restaurants', { method: 'POST', body });
       formElement.reset();
       state.editingRestaurantId = '';
@@ -1495,6 +1511,25 @@ function renderRestaurants() {
       } catch (error) {
         showToast(error.message || 'Unable to update favorite.');
         button.disabled = false;
+      }
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-toggle-want-to-go]').forEach(input => {
+    input.addEventListener('click', event => event.stopPropagation());
+    input.addEventListener('change', async event => {
+      event.stopPropagation();
+      const restaurant = state.restaurants.find(item => String(item._id) === String(input.dataset.toggleWantToGo));
+      if (!restaurant) return;
+      input.disabled = true;
+      try {
+        await api(`/api/restaurants/${restaurant._id}`, { method: 'PUT', body: restaurantUpdateBody(restaurant, { wantToGo: input.checked }) });
+        await Promise.all([loadRestaurants(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+        renderRestaurants();
+      } catch (error) {
+        showToast(error.message || 'Unable to update Want To Go.');
+        input.disabled = false;
+        input.checked = Boolean(restaurant.wantToGo);
       }
     });
   });
@@ -1542,6 +1577,7 @@ function renderRestaurants() {
         const body = formToBody(formElement);
         body.cuisine = collectRestaurantCuisines(formElement);
         body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+        body.wantToGo = getFormCheckboxChecked(formElement, 'wantToGo');
         await api(`/api/restaurants/${restaurantId}`, { method: 'PUT', body });
         state.editingRestaurantId = '';
         state.openRestaurantMenuId = '';
@@ -2046,6 +2082,7 @@ function restaurantRandomFilterGroups() {
     ` : ''}
     <div class="slot-filter-group single">
       ${slotNativeCheckbox('favoriteOnly', '1', 'Favorited only')}
+      ${slotNativeCheckbox('wantToGoOnly', '1', 'Want To Go only')}
     </div>
   `;
 }
@@ -2082,6 +2119,7 @@ function slotCheckbox(name, value, label, ariaLabel = '') {
 function bindSlotTagFilterModal(form) {
   if (!form) return;
   const modal = form.querySelector('[data-slot-tag-modal]');
+  const card = form.closest('.random-restaurant-card');
   const count = form.querySelector('[data-tag-count]');
   const updateCount = () => {
     if (!count) return;
@@ -2092,11 +2130,13 @@ function bindSlotTagFilterModal(form) {
     if (!modal) return;
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
+    card?.classList.remove('slot-tag-modal-active');
   };
   form.querySelector('[data-open-tag-filter]')?.addEventListener('click', event => {
     event.preventDefault();
     modal?.classList.add('open');
     modal?.setAttribute('aria-hidden', 'false');
+    card?.classList.add('slot-tag-modal-active');
   });
   form.querySelectorAll('[data-close-tag-filter]').forEach(button => {
     button.addEventListener('click', event => {
@@ -2145,7 +2185,8 @@ function getRandomRestaurantFilters(form) {
     minRating: Number(formData.get('minRating') || 0),
     cuisines: formData.getAll('cuisines').map(value => String(value).toLowerCase()),
     tags: formData.getAll('tags').map(value => String(value).toLowerCase()),
-    favoriteOnly: formData.get('favoriteOnly') === '1'
+    favoriteOnly: formData.get('favoriteOnly') === '1',
+    wantToGoOnly: formData.get('wantToGoOnly') === '1'
   };
 }
 
@@ -2162,6 +2203,7 @@ function getFilteredRandomRestaurants(filters) {
     if (filters.cuisines.length && !filters.cuisines.some(cuisine => cuisines.includes(cuisine))) return false;
     if (filters.tags.length && !filters.tags.some(tag => tags.includes(tag))) return false;
     if (filters.favoriteOnly && !restaurant.favorite) return false;
+    if (filters.wantToGoOnly && !restaurant.wantToGo) return false;
     return true;
   });
 }
@@ -2287,6 +2329,16 @@ function restaurantSortOptions() {
   return options.map(([value, label]) => option(value, label, state.restaurantSort || 'favorite')).join('');
 }
 
+
+function wantToGoRestaurantItem(restaurant) {
+  return `
+    <article class="want-to-go-item">
+      <strong>${escapeHtml(restaurant.name || 'Restaurant')}</strong>
+      ${restaurant.location ? `<a href="${escapeAttr(mapLinkForAddress(restaurant.location))}" target="_blank" rel="noopener">${escapeHtml(restaurant.location)}</a>` : '<span class="muted">No location saved</span>'}
+    </article>
+  `;
+}
+
 function restaurantItem(restaurant) {
   if (String(state.editingRestaurantId) === String(restaurant._id)) return restaurantEditCard(restaurant);
   const dishes = (restaurant.favoriteDishes || []).join(', ');
@@ -2299,6 +2351,10 @@ function restaurantItem(restaurant) {
           <h3>${escapeHtml(restaurant.name)}</h3>
           <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')}</p>
           <p class="restaurant-price-line">${escapeHtml(restaurant.priceLevel || '$$')}</p>
+          <label class="restaurant-want-toggle">
+            <input type="checkbox" data-toggle-want-to-go="${restaurant._id}" ${restaurant.wantToGo ? 'checked' : ''} />
+            <span>Want To Go</span>
+          </label>
         </div>
         <div class="restaurant-card-controls">
           <button class="restaurant-favorite-btn ${restaurant.favorite ? 'active' : ''}" type="button" data-favorite-restaurant="${restaurant._id}" aria-label="${restaurant.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${restaurant.favorite ? 'true' : 'false'}">
@@ -2339,6 +2395,7 @@ function restaurantUpdateBody(restaurant, overrides = {}) {
     tags: restaurant.tags || [],
     rating: Number(restaurant.rating || 0),
     favorite: Boolean(restaurant.favorite),
+    wantToGo: Boolean(restaurant.wantToGo),
     ...overrides
   };
 }
@@ -2358,6 +2415,7 @@ function restaurantEditCard(restaurant) {
           <label>Favorite Dishes<input name="favoriteDishes" value="${escapeAttr((restaurant.favoriteDishes || []).join(', '))}" /></label>
           <label>Tags<input name="tags" value="${escapeAttr((restaurant.tags || []).join(', '))}" /></label>
           <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" ${restaurant.favorite ? 'checked' : ''} /> Favorite</label>
+          <label class="wide checkbox-line restaurant-want-to-go"><input type="checkbox" name="wantToGo" ${restaurant.wantToGo ? 'checked' : ''} /> Want To Go</label>
         </div>
         <div class="restaurant-card-actions">
           <button class="primary small-btn" type="submit">Save</button>
