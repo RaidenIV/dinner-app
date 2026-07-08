@@ -125,19 +125,19 @@ function bindShell() {
     let shouldRenderPlanner = false;
     let shouldRenderRestaurants = false;
 
-    if (state.openPlannerMealMenuId && !event.target.closest('[data-plan-menu], .meal-action-menu')) {
+    if (state.openPlannerMealMenuId && !event.target.closest('.meal-menu-wrap, [data-plan-menu], .meal-action-menu')) {
       state.openPlannerMealMenuId = '';
       shouldRenderPlanner = state.page === 'planner';
     }
 
-    if (state.openRestaurantMenuId && !event.target.closest('[data-restaurant-menu], .restaurant-action-menu')) {
+    if (state.openRestaurantMenuId && !event.target.closest('.restaurant-menu-wrap, [data-restaurant-menu], .restaurant-action-menu')) {
       state.openRestaurantMenuId = '';
       shouldRenderRestaurants = state.page === 'restaurants';
     }
 
     if (shouldRenderPlanner) renderPlanner();
     if (shouldRenderRestaurants) renderRestaurants();
-  });
+  }, true);
 
   $('#quick-suggest-btn').addEventListener('click', async () => {
     state.page = 'dashboard';
@@ -700,7 +700,9 @@ function openCalendarMealForm(date, plan = null) {
       const customSides = readCustomSides(formElement);
       const customName = data.sourceType === 'custom'
         ? String(data.customName || '').trim() || buildCustomMealName(data.customProtein, customSides)
-        : '';
+        : data.sourceType === 'leftovers'
+          ? String(data.leftoversName || '').trim() || 'Leftovers'
+          : '';
       const body = {
         date: data.date,
         mealType: data.mealType,
@@ -764,6 +766,7 @@ function calendarMealForm(date, plan = null) {
   const sourceType = plan?.sourceType || 'custom';
   const selectedRecipeId = sourceType === 'recipe' ? String(plan?.sourceId || '') : '';
   const selectedRestaurantId = sourceType === 'restaurant' ? String(plan?.sourceId || '') : '';
+  const selectedLeftoversName = sourceType === 'leftovers' ? (plan?.customName || 'Leftovers') : '';
   const selectedMealType = plan?.mealType || 'dinner';
   const selectedTime = plan?.time || getDefaultMealTime(selectedMealType);
   const customSides = Array.isArray(plan?.customSides) && plan.customSides.length ? plan.customSides : [{ quantity: '', name: '' }];
@@ -785,6 +788,7 @@ function calendarMealForm(date, plan = null) {
         <label class="wide">Meal Source
           <select name="sourceType">
             ${option('custom', 'Custom', sourceType)}
+            ${option('leftovers', 'Leftovers', sourceType)}
             ${option('recipe', 'Recipe', sourceType)}
             ${option('restaurant', 'Restaurant', sourceType)}
             <option value="favorites">Favorites</option>
@@ -805,6 +809,11 @@ function calendarMealForm(date, plan = null) {
             <option value="">Select restaurant</option>
             ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, selectedRestaurantId)).join('')}
           </select>
+        </div>
+      </div>
+      <div class="source-field-expander ${sourceType === 'leftovers' ? 'open' : ''}" data-source-field="leftovers">
+        <div class="source-field-inner custom-meal-fields">
+          <input name="leftoversName" placeholder="Leftovers description" value="${escapeAttr(selectedLeftoversName)}" />
         </div>
       </div>
       <div class="source-field-expander ${sourceType === 'custom' ? 'open' : ''}" data-source-field="custom">
@@ -1376,7 +1385,8 @@ function renderRestaurants() {
           ${restaurantCuisinePicker('', 'add-restaurant')}
           <label>Price<select name="priceLevel"><option>$</option><option selected>$$</option><option>$$$</option><option>$$$$</option></select></label>
           <label>Rating<select name="rating">${ratingOptions()}</select></label>
-          <label class="wide">Location or Link<input name="location" placeholder="Address, Google Maps, DoorDash link" /></label>
+          <label class="wide">Address<input name="location" placeholder="Street address or area" /></label>
+          <label class="wide">Link<input name="link" type="url" placeholder="Website, menu, Google Maps, DoorDash link" /></label>
           <label>Favorite Dishes<input name="favoriteDishes" placeholder="wings, tacos, ramen" /></label>
           <label>Tags<input name="tags" placeholder="late night, cheap, delivery" /></label>
           <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" /> Favorite</label>
@@ -1453,10 +1463,12 @@ function renderRestaurants() {
     }, 'Restaurant saved.');
   });
 
-  $('#random-restaurant-form').addEventListener('submit', event => {
+  const randomRestaurantForm = $('#random-restaurant-form');
+  randomRestaurantForm.addEventListener('submit', event => {
     event.preventDefault();
     spinRandomRestaurant(event.currentTarget);
   });
+  bindSlotTagFilterModal(randomRestaurantForm);
 
   $('#restaurant-sort-select')?.addEventListener('change', event => {
     state.restaurantSort = event.currentTarget.value;
@@ -1492,6 +1504,15 @@ function renderRestaurants() {
       event.stopPropagation();
       const restaurantId = button.dataset.restaurantMenu;
       state.openRestaurantMenuId = String(state.openRestaurantMenuId) === String(restaurantId) ? '' : restaurantId;
+      renderRestaurants();
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-restaurant-card]').forEach(card => {
+    card.addEventListener('dblclick', event => {
+      if (event.target.closest('button, a, input, select, textarea, .restaurant-action-menu')) return;
+      state.editingRestaurantId = card.dataset.restaurantCard;
+      state.openRestaurantMenuId = '';
       renderRestaurants();
     });
   });
@@ -2000,8 +2021,26 @@ function restaurantRandomFilterGroups() {
     ${tagOptions.length ? `
       <div class="slot-filter-group">
         <span class="slot-filter-label">Tags</span>
-        <div class="slot-checkbox-grid">
-          ${tagOptions.map(tag => slotCheckbox('tags', tag, tag)).join('')}
+        <button class="secondary slot-tag-trigger" type="button" data-open-tag-filter>
+          Choose Tags <span data-tag-count>0 selected</span>
+        </button>
+        <div class="slot-tag-modal" data-slot-tag-modal aria-hidden="true">
+          <div class="slot-tag-modal-card" role="dialog" aria-modal="true" aria-label="Choose restaurant tags">
+            <div class="slot-tag-modal-head">
+              <div>
+                <h4>Filter By Tags</h4>
+                <p class="muted">Choose any tags to include in the spin.</p>
+              </div>
+              <button class="small-btn" type="button" data-close-tag-filter aria-label="Close tag filters">×</button>
+            </div>
+            <div class="slot-checkbox-grid slot-tag-grid">
+              ${tagOptions.map(tag => slotCheckbox('tags', tag, tag)).join('')}
+            </div>
+            <div class="action-row modal-actions">
+              <button class="primary small-btn" type="button" data-close-tag-filter>Done</button>
+              <button class="ghost small-btn" type="button" data-clear-tag-filter>Clear</button>
+            </div>
+          </div>
         </div>
       </div>
     ` : ''}
@@ -2037,6 +2076,57 @@ function slotCheckbox(name, value, label, ariaLabel = '') {
       <span>${escapeHtml(label)}</span>
     </label>
   `;
+}
+
+
+function bindSlotTagFilterModal(form) {
+  if (!form) return;
+  const modal = form.querySelector('[data-slot-tag-modal]');
+  const count = form.querySelector('[data-tag-count]');
+  const updateCount = () => {
+    if (!count) return;
+    const selected = form.querySelectorAll('[name="tags"]:checked').length;
+    count.textContent = selected ? `${selected} selected` : '0 selected';
+  };
+  const close = () => {
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  };
+  form.querySelector('[data-open-tag-filter]')?.addEventListener('click', event => {
+    event.preventDefault();
+    modal?.classList.add('open');
+    modal?.setAttribute('aria-hidden', 'false');
+  });
+  form.querySelectorAll('[data-close-tag-filter]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      close();
+    });
+  });
+  form.querySelector('[data-clear-tag-filter]')?.addEventListener('click', event => {
+    event.preventDefault();
+    form.querySelectorAll('[name="tags"]').forEach(input => { input.checked = false; });
+    updateCount();
+  });
+  modal?.addEventListener('pointerdown', event => {
+    if (event.target === modal) close();
+  });
+  form.querySelectorAll('[name="tags"]').forEach(input => input.addEventListener('change', updateCount));
+  updateCount();
+}
+
+function normalizeExternalUrl(url) {
+  const value = String(url || '').trim();
+  if (!value) return '#';
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function mapLinkForAddress(address) {
+  const value = String(address || '').trim();
+  if (!value) return '#';
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value)}`;
 }
 
 function slotMachinePlaceholder() {
@@ -2203,7 +2293,7 @@ function restaurantItem(restaurant) {
   const tags = (restaurant.tags || []).join(', ');
   const isMenuOpen = String(state.openRestaurantMenuId) === String(restaurant._id);
   return `
-    <article class="restaurant-card">
+    <article class="restaurant-card" data-restaurant-card="${restaurant._id}">
       <div class="restaurant-card-top">
         <div class="restaurant-card-titleblock">
           <h3>${escapeHtml(restaurant.name)}</h3>
@@ -2231,7 +2321,8 @@ function restaurantItem(restaurant) {
       </div>
       ${dishes ? `<p><strong>Go-to:</strong> ${escapeHtml(dishes)}</p>` : ''}
       ${tags ? `<p class="muted">${escapeHtml(tags)}</p>` : ''}
-      ${restaurant.location ? `<p class="restaurant-location">${escapeHtml(restaurant.location)}</p>` : ''}
+      ${restaurant.location ? `<p class="restaurant-location"><a href="${escapeAttr(mapLinkForAddress(restaurant.location))}" target="_blank" rel="noopener">${escapeHtml(restaurant.location)}</a></p>` : ''}
+      ${restaurant.link ? `<p class="restaurant-link"><a href="${escapeAttr(normalizeExternalUrl(restaurant.link))}" target="_blank" rel="noopener">Open Link</a></p>` : ''}
       <p class="muted restaurant-visits">Visited ${restaurant.timesVisited || 0}x</p>
     </article>
   `;
@@ -2243,6 +2334,7 @@ function restaurantUpdateBody(restaurant, overrides = {}) {
     cuisine: restaurant.cuisine || '',
     priceLevel: restaurant.priceLevel || '$$',
     location: restaurant.location || '',
+    link: restaurant.link || '',
     favoriteDishes: restaurant.favoriteDishes || [],
     tags: restaurant.tags || [],
     rating: Number(restaurant.rating || 0),
@@ -2261,7 +2353,8 @@ function restaurantEditCard(restaurant) {
           ${restaurantCuisinePicker(restaurant.cuisine || '', `edit-restaurant-${restaurant._id}`)}
           <label>Price<select name="priceLevel">${['$', '$$', '$$$', '$$$$'].map(value => option(value, value, restaurant.priceLevel || '$$')).join('')}</select></label>
           <label>Rating<select name="rating">${ratingOptions(restaurant.rating || 0)}</select></label>
-          <label class="wide">Location or Link<input name="location" value="${escapeAttr(restaurant.location || '')}" /></label>
+          <label class="wide">Address<input name="location" value="${escapeAttr(restaurant.location || '')}" /></label>
+          <label class="wide">Link<input name="link" type="url" value="${escapeAttr(restaurant.link || '')}" /></label>
           <label>Favorite Dishes<input name="favoriteDishes" value="${escapeAttr((restaurant.favoriteDishes || []).join(', '))}" /></label>
           <label>Tags<input name="tags" value="${escapeAttr((restaurant.tags || []).join(', '))}" /></label>
           <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" ${restaurant.favorite ? 'checked' : ''} /> Favorite</label>

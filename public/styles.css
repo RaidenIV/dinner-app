@@ -4284,3 +4284,113 @@ textarea,
     width: 100%;
   }
 }
+
+/* Current request: random selector tag modal, map links, and source polish */
+.slot-tag-trigger {
+  width: fit-content;
+  min-height: 34px;
+  padding: 0 13px;
+  gap: 8px;
+}
+
+.slot-tag-trigger [data-tag-count] {
+  color: var(--brand);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.slot-tag-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+
+.slot-tag-modal.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.slot-tag-modal-card {
+  width: min(100%, 520px);
+  max-height: min(76dvh, 620px);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--modal-radius);
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.14);
+  transform: translateY(8px) scale(0.985);
+  transition: transform 0.18s ease;
+  overflow: hidden;
+}
+
+.slot-tag-modal.open .slot-tag-modal-card {
+  transform: translateY(0) scale(1);
+}
+
+.slot-tag-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.slot-tag-modal-head h4 {
+  margin: 0 0 3px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.slot-tag-grid {
+  max-height: 42dvh;
+  overflow-y: auto;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.restaurant-location a,
+.restaurant-link a {
+  color: var(--brand);
+  font-weight: 800;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.restaurant-location a:hover,
+.restaurant-link a:hover {
+  text-decoration: underline;
+}
+
+.slot-tag-trigger,
+.slot-tag-trigger *,
+.slot-tag-modal button,
+.slot-tag-modal label,
+.slot-tag-modal label * {
+  cursor: pointer !important;
+}
+
+@media (max-width: 620px) {
+  .slot-tag-modal {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .slot-tag-modal-card {
+    max-height: 82dvh;
+    border-radius: 18px;
+  }
+}

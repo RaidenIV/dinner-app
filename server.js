@@ -113,6 +113,7 @@ const restaurantSchema = new mongoose.Schema({
   cuisine: { type: String, default: '', trim: true, index: true },
   priceLevel: { type: String, enum: ['$', '$$', '$$$', '$$$$'], default: '$$' },
   location: { type: String, default: '', trim: true },
+  link: { type: String, default: '', trim: true },
   favoriteDishes: [{ type: String, trim: true }],
   tags: [{ type: String, trim: true }],
   rating: { type: Number, min: 0, max: 5, default: 0 },
@@ -127,7 +128,7 @@ const mealPlanSchema = new mongoose.Schema({
   date: { type: String, required: true, index: true },
   mealType: { type: String, enum: ['breakfast', 'lunch', 'dinner'], required: true },
   time: { type: String, default: '', trim: true },
-  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom'], default: 'custom' },
+  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom', 'leftovers'], default: 'custom' },
   sourceId: { type: objectId, default: null },
   customName: { type: String, default: '', trim: true },
   customProtein: { type: String, default: '', trim: true, maxlength: 100 },
@@ -153,7 +154,7 @@ const mealHistorySchema = new mongoose.Schema({
   householdId: { type: objectId, ref: 'Household', required: true, index: true },
   date: { type: String, required: true, index: true },
   mealType: { type: String, enum: ['breakfast', 'lunch', 'dinner'], required: true },
-  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom'], default: 'custom' },
+  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom', 'leftovers'], default: 'custom' },
   sourceId: { type: objectId, default: null },
   name: { type: String, required: true, trim: true },
   cuisine: { type: String, default: '', trim: true },
@@ -363,6 +364,7 @@ async function getSourceNameAndCuisine(sourceType, sourceId, customName, househo
     const restaurant = await Restaurant.findOne({ _id: sourceId, householdId }).lean();
     return { name: restaurant?.name || customName || 'Restaurant', cuisine: restaurant?.cuisine || '' };
   }
+  if (sourceType === 'leftovers') return { name: customName || 'Leftovers', cuisine: '' };
   return { name: customName || 'Custom meal', cuisine: '' };
 }
 
@@ -762,6 +764,7 @@ app.post('/api/restaurants', authenticate, async (req, res) => {
       cuisine: req.body.cuisine || '',
       priceLevel: req.body.priceLevel || '$$',
       location: req.body.location || '',
+      link: req.body.link || '',
       favoriteDishes: normalizeTags(req.body.favoriteDishes),
       tags: normalizeTags(req.body.tags),
       rating: Number(req.body.rating || 0),
@@ -781,6 +784,7 @@ app.put('/api/restaurants/:id', authenticate, async (req, res) => {
     cuisine: req.body.cuisine || '',
     priceLevel: req.body.priceLevel || '$$',
     location: req.body.location || '',
+    link: req.body.link || '',
     favoriteDishes: normalizeTags(req.body.favoriteDishes),
     tags: normalizeTags(req.body.tags),
     rating: Number(req.body.rating || 0),
@@ -871,6 +875,7 @@ app.get('/api/planner', authenticate, async (req, res) => {
 app.put('/api/planner/slot', authenticate, async (req, res) => {
   try {
     const { date, mealType, time, sourceType, sourceId, customName, customProtein, customSides, status, notes } = req.body;
+    const normalizedSourceType = ['recipe', 'restaurant', 'custom', 'leftovers'].includes(sourceType) ? sourceType : 'custom';
     if (!date || !mealType) return res.status(400).json({ error: 'date and mealType are required.' });
 
     const plan = await MealPlan.findOneAndUpdate(
@@ -880,11 +885,11 @@ app.put('/api/planner/slot', authenticate, async (req, res) => {
         date,
         mealType,
         time: time || '',
-        sourceType: sourceType || 'custom',
-        sourceId: sourceId || null,
+        sourceType: normalizedSourceType,
+        sourceId: normalizedSourceType === 'recipe' || normalizedSourceType === 'restaurant' ? sourceId || null : null,
         customName: customName || '',
-        customProtein: sourceType === 'custom' ? String(customProtein || '').trim() : '',
-        customSides: sourceType === 'custom' ? normalizeCustomSides(customSides) : [],
+        customProtein: normalizedSourceType === 'custom' ? String(customProtein || '').trim() : '',
+        customSides: normalizedSourceType === 'custom' ? normalizeCustomSides(customSides) : [],
         status: status || 'planned',
         notes: notes || '',
         updatedBy: req.user._id
