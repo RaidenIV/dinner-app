@@ -55,6 +55,33 @@ button {
   cursor: pointer;
 }
 
+body,
+body * {
+  cursor: default;
+}
+
+button,
+a,
+[role="button"],
+.nav-item,
+.calendar-add-btn,
+.restaurant-favorite-btn,
+.restaurant-kebab-btn,
+.meal-kebab-btn,
+.restaurant-action-menu button,
+.meal-action-menu button,
+input[type="checkbox"],
+input[type="radio"],
+select {
+  cursor: pointer;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+}
+
 .hidden {
   display: none !important;
 }
@@ -899,6 +926,7 @@ textarea:focus {
 }
 
 .calendar-meal {
+  position: relative;
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -907,7 +935,15 @@ textarea:focus {
   background: var(--surface);
 }
 
+.calendar-meal-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .calendar-meal-main {
+  min-width: 0;
   display: grid;
   gap: 6px;
 }
@@ -928,6 +964,87 @@ textarea:focus {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.meal-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.meal-kebab-btn {
+  width: 28px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.14s, color 0.14s;
+}
+
+.meal-kebab-btn .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.meal-kebab-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+.meal-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 24;
+  min-width: 116px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(0,0,0,0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.14s, visibility 0.14s;
+}
+
+.meal-action-menu.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.meal-action-menu button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.meal-action-menu button:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+.meal-action-menu .danger-menu-item {
+  color: var(--danger);
+}
+
+.meal-action-menu .danger-menu-item:hover {
+  background: rgba(229, 62, 62, 0.1);
+  color: var(--danger);
 }
 
 .calendar-form-wrap {
@@ -1781,12 +1898,10 @@ textarea:focus {
   }
 
   .calendar-meal-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
   }
 
   .calendar-meal-actions .badge {
-    grid-column: 1 / -1;
     justify-content: center;
   }
 
@@ -3170,12 +3285,11 @@ body.mobile-drawer-open .panel-edge-toggle {
 
 .restaurant-card {
   position: relative;
-  min-height: 285px;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  padding-right: 70px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
@@ -3186,12 +3300,18 @@ body.mobile-drawer-open .panel-edge-toggle {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 }
 
 .restaurant-card-titleblock {
   min-width: 0;
   max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.restaurant-card-titleblock h3 {
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .restaurant-price-line {
@@ -3203,42 +3323,34 @@ body.mobile-drawer-open .panel-edge-toggle {
 }
 
 .restaurant-card-controls {
-  position: absolute;
-  top: 12px;
-  right: 12px;
   z-index: 4;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .restaurant-favorite-btn,
 .restaurant-kebab-btn {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 9999px;
-  background: var(--white);
-  cursor: pointer;
-  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.14s;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  transition: background 0.14s, color 0.14s, transform 0.14s;
 }
 
 .restaurant-favorite-btn {
-  border: 1px solid rgba(229, 62, 62, 0.42);
   color: var(--danger);
 }
 
 .restaurant-favorite-btn .material-symbols-outlined {
-  font-size: 17px;
+  font-size: 20px;
   font-variation-settings: 'FILL' 0, 'wght' 700, 'GRAD' 0, 'opsz' 20;
-}
-
-.restaurant-favorite-btn.active {
-  background: rgba(229, 62, 62, 0.1);
-  border-color: rgba(229, 62, 62, 0.55);
 }
 
 .restaurant-favorite-btn.active .material-symbols-outlined {
@@ -3246,21 +3358,19 @@ body.mobile-drawer-open .panel-edge-toggle {
 }
 
 .restaurant-favorite-btn:hover {
-  background: rgba(229, 62, 62, 0.12);
-  border-color: var(--danger);
+  background: rgba(229, 62, 62, 0.1);
 }
 
 .restaurant-kebab-btn {
-  border: 1px solid var(--border-mid);
   color: var(--text-secondary);
 }
 
 .restaurant-kebab-btn .material-symbols-outlined {
-  font-size: 19px;
+  font-size: 20px;
 }
 
 .restaurant-kebab-btn:hover {
-  border-color: var(--brand);
+  background: var(--brand-light);
   color: var(--brand);
 }
 
@@ -3306,7 +3416,7 @@ body.mobile-drawer-open .panel-edge-toggle {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
-  cursor: pointer;
+  text-align: left;
 }
 
 .restaurant-action-menu button:hover {
@@ -3375,7 +3485,6 @@ body.mobile-drawer-open .panel-edge-toggle {
   .restaurant-card {
     min-height: 255px;
     padding: 13px;
-    padding-right: 64px;
   }
 }
 
@@ -3387,6 +3496,5 @@ body.mobile-drawer-open .panel-edge-toggle {
   .restaurant-card {
     min-height: 0;
     padding: 13px;
-    padding-right: 64px;
   }
 }

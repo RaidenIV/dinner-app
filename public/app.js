@@ -22,6 +22,7 @@ const state = {
   restaurantSort: localStorage.getItem('mealPlannerRestaurantSort') || 'favorite',
   editingRestaurantId: '',
   openRestaurantMenuId: '',
+  openPlannerMealMenuId: '',
   socket: null,
   realtimeRefreshTimer: null,
   realtimeRefreshInFlight: false
@@ -455,9 +456,19 @@ function renderPlanner() {
     button.addEventListener('click', () => openCalendarMealForm(button.dataset.addDate));
   });
 
+  pageRoot.querySelectorAll('[data-plan-menu]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const planId = button.dataset.planMenu;
+      state.openPlannerMealMenuId = String(state.openPlannerMealMenuId) === String(planId) ? '' : planId;
+      renderPlanner();
+    });
+  });
+
   pageRoot.querySelectorAll('[data-edit-plan]').forEach(button => {
     button.addEventListener('click', () => {
       const plan = state.planner.plans.find(item => String(item._id) === String(button.dataset.editPlan));
+      state.openPlannerMealMenuId = '';
       if (plan) openCalendarMealForm(plan.date, plan);
     });
   });
@@ -465,8 +476,9 @@ function renderPlanner() {
   pageRoot.querySelectorAll('[data-delete-plan]').forEach(button => {
     button.addEventListener('click', async () => {
       await api(`/api/planner/${button.dataset.deletePlan}`, { method: 'DELETE' });
+      state.openPlannerMealMenuId = '';
       await loadPlanner();
-      showToast('Meal cleared.');
+      showToast('Meal deleted.');
       renderPlanner();
     });
   });
@@ -656,20 +668,30 @@ function calendarMealForm(date, plan = null) {
 }
 
 function plannerMealItem(plan) {
+  const isMenuOpen = String(state.openPlannerMealMenuId) === String(plan._id);
   return `
     <article class="calendar-meal">
-      <div class="calendar-meal-main">
-        <div class="badge-row">
-          <span class="badge accent">${escapeHtml(plan.mealType)}</span>
-          ${plan.time ? `<span class="badge">${formatMealTime(plan.time)}</span>` : ''}
+      <div class="calendar-meal-top">
+        <div class="calendar-meal-main">
+          <div class="badge-row">
+            <span class="badge accent">${escapeHtml(plan.mealType)}</span>
+            ${plan.time ? `<span class="badge">${formatMealTime(plan.time)}</span>` : ''}
+          </div>
+          <strong>${escapeHtml(getPlanName(plan))}</strong>
+          ${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}
         </div>
-        <strong>${escapeHtml(getPlanName(plan))}</strong>
-        ${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}
+        <div class="meal-menu-wrap">
+          <button class="meal-kebab-btn" type="button" data-plan-menu="${plan._id}" aria-label="Meal actions" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+            <span class="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+          </button>
+          <div class="meal-action-menu ${isMenuOpen ? 'open' : ''}">
+            <button type="button" data-edit-plan="${plan._id}">Edit</button>
+            <button class="danger-menu-item" type="button" data-delete-plan="${plan._id}">Delete</button>
+          </div>
+        </div>
       </div>
       <div class="calendar-meal-actions">
         <span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : ''}">${escapeHtml(plan.status)}</span>
-        <button class="small-btn" type="button" data-edit-plan="${plan._id}">Edit</button>
-        <button class="danger small-btn" type="button" data-delete-plan="${plan._id}">Clear</button>
       </div>
     </article>
   `;
@@ -1116,6 +1138,12 @@ function renderRestaurants() {
   pageRoot.querySelectorAll('[data-favorite-restaurant]').forEach(button => {
     button.addEventListener('click', async event => {
       event.stopPropagation();
+      button.animate([
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.28)' },
+        { transform: 'scale(0.94)' },
+        { transform: 'scale(1)' }
+      ], { duration: 260, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
       const restaurant = state.restaurants.find(item => String(item._id) === String(button.dataset.favoriteRestaurant));
       if (!restaurant) return;
       button.disabled = true;
@@ -1610,25 +1638,25 @@ function restaurantItem(restaurant) {
   const isMenuOpen = String(state.openRestaurantMenuId) === String(restaurant._id);
   return `
     <article class="restaurant-card">
-      <div class="restaurant-card-controls">
-        <button class="restaurant-favorite-btn ${restaurant.favorite ? 'active' : ''}" type="button" data-favorite-restaurant="${restaurant._id}" aria-label="${restaurant.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${restaurant.favorite ? 'true' : 'false'}">
-          <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
-        </button>
-        <div class="restaurant-menu-wrap">
-          <button class="restaurant-kebab-btn" type="button" data-restaurant-menu="${restaurant._id}" aria-label="Restaurant actions" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
-            <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
-          </button>
-          <div class="restaurant-action-menu ${isMenuOpen ? 'open' : ''}">
-            <button type="button" data-edit-restaurant="${restaurant._id}">Edit</button>
-            <button class="danger-menu-item" type="button" data-delete-restaurant="${restaurant._id}">Delete</button>
-          </div>
-        </div>
-      </div>
       <div class="restaurant-card-top">
         <div class="restaurant-card-titleblock">
           <h3>${escapeHtml(restaurant.name)}</h3>
           <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')}</p>
           <p class="restaurant-price-line">${escapeHtml(restaurant.priceLevel || '$$')}</p>
+        </div>
+        <div class="restaurant-card-controls">
+          <button class="restaurant-favorite-btn ${restaurant.favorite ? 'active' : ''}" type="button" data-favorite-restaurant="${restaurant._id}" aria-label="${restaurant.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${restaurant.favorite ? 'true' : 'false'}">
+            <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
+          </button>
+          <div class="restaurant-menu-wrap">
+            <button class="restaurant-kebab-btn" type="button" data-restaurant-menu="${restaurant._id}" aria-label="Restaurant actions" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+              <span class="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+            </button>
+            <div class="restaurant-action-menu ${isMenuOpen ? 'open' : ''}">
+              <button type="button" data-edit-restaurant="${restaurant._id}">Edit</button>
+              <button class="danger-menu-item" type="button" data-delete-restaurant="${restaurant._id}">Delete</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="badge-row">
