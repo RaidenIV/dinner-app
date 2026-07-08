@@ -29,7 +29,8 @@ const state = {
   openPlannerMealMenuId: '',
   socket: null,
   realtimeRefreshTimer: null,
-  realtimeRefreshInFlight: false
+  realtimeRefreshInFlight: false,
+  realtimeRefreshQueued: false
 };
 
 let recipeImportScan = { dataUrl: '', name: '', type: '' };
@@ -179,6 +180,8 @@ function disconnectRealtime() {
     clearTimeout(state.realtimeRefreshTimer);
     state.realtimeRefreshTimer = null;
   }
+  state.realtimeRefreshQueued = false;
+  state.realtimeRefreshInFlight = false;
   if (state.socket) {
     state.socket.off('household:update', scheduleRealtimeRefresh);
     state.socket.disconnect();
@@ -187,24 +190,39 @@ function disconnectRealtime() {
 }
 
 function scheduleRealtimeRefresh() {
-  if (!state.token || state.realtimeRefreshInFlight) return;
+  if (!state.token) return;
+
+  if (state.realtimeRefreshInFlight) {
+    state.realtimeRefreshQueued = true;
+    return;
+  }
+
   clearTimeout(state.realtimeRefreshTimer);
-  state.realtimeRefreshTimer = setTimeout(async () => {
-    state.realtimeRefreshInFlight = true;
-    try {
-      const me = await api('/api/me');
-      state.user = me.user;
-      state.household = me.household;
-      $('#household-name').textContent = me.household?.name || 'Meal Planner';
-      syncUserAvatarUI();
-      await loadBaseData();
-      await renderCurrentPage();
-    } catch (error) {
-      console.warn('Realtime refresh failed', error);
-    } finally {
-      state.realtimeRefreshInFlight = false;
+  state.realtimeRefreshTimer = null;
+  runRealtimeRefresh();
+}
+
+async function runRealtimeRefresh() {
+  if (!state.token || state.realtimeRefreshInFlight) return;
+
+  state.realtimeRefreshInFlight = true;
+  try {
+    const me = await api('/api/me');
+    state.user = me.user;
+    state.household = me.household;
+    $('#household-name').textContent = me.household?.name || 'Meal Planner';
+    syncUserAvatarUI();
+    await loadBaseData();
+    await renderCurrentPage();
+  } catch (error) {
+    console.warn('Realtime refresh failed', error);
+  } finally {
+    state.realtimeRefreshInFlight = false;
+    if (state.realtimeRefreshQueued) {
+      state.realtimeRefreshQueued = false;
+      queueMicrotask(runRealtimeRefresh);
     }
-  }, 180);
+  }
 }
 
 async function loadBaseData() {
@@ -517,6 +535,15 @@ function renderPlanner() {
     });
   });
 
+  pageRoot.querySelectorAll('[data-plan-item]').forEach(item => {
+    item.addEventListener('dblclick', event => {
+      if (event.target.closest('[data-plan-menu], .meal-action-menu')) return;
+      const plan = state.planner.plans.find(planItem => String(planItem._id) === String(item.dataset.planItem));
+      state.openPlannerMealMenuId = '';
+      if (plan) openCalendarMealForm(plan.date, plan);
+    });
+  });
+
   pageRoot.querySelectorAll('[data-edit-plan]').forEach(button => {
     button.addEventListener('click', () => {
       const plan = state.planner.plans.find(item => String(item._id) === String(button.dataset.editPlan));
@@ -547,7 +574,7 @@ function plannerDayCard(date, plans, fullCalendar = false) {
           <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
           <span class="calendar-day-date">${plannerDateFormatter.format(new Date(`${date}T12:00:00`))}</span>
         </div>
-        <button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>
+        ${isPast ? '' : `<button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>`}
       </header>
       <div class="calendar-meals">
         ${plans.length ? plans.map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
@@ -838,9 +865,6 @@ function getFavoriteMealOptions() {
   const favoriteRecipes = state.recipes
     .filter(recipe => recipe.favorite)
     .map(recipe => ({ type: 'recipe', id: recipe._id, name: recipe.name, meta: [recipe.cuisine, 'Recipe'].filter(Boolean).join(' · ') }));
-  const favoriteRestaurants = state.restaurants
-    .filter(restaurant => restaurant.favorite)
-    .map(restaurant => ({ type: 'restaurant', id: restaurant._id, name: restaurant.name, meta: [restaurant.cuisine, 'Restaurant'].filter(Boolean).join(' · ') }));
   const customFavorites = state.customMealFavorites
     .map(meal => ({
       type: 'custom',
@@ -850,7 +874,7 @@ function getFavoriteMealOptions() {
       protein: meal.protein || '',
       sides: Array.isArray(meal.sides) ? meal.sides : []
     }));
-  return [...customFavorites, ...favoriteRecipes, ...favoriteRestaurants].sort((a, b) => a.name.localeCompare(b.name));
+  return [...customFavorites, ...favoriteRecipes].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function openFavoriteMealModal(form) {
@@ -877,7 +901,7 @@ function openFavoriteMealModal(form) {
             <strong>${escapeHtml(favorite.name)}</strong>
             <span>${escapeHtml(favorite.meta || titleCase(favorite.type))}</span>
           </button>
-        `).join('') : '<div class="empty compact">No favorite recipes, restaurants, or custom meals saved yet.</div>'}
+        `).join('') : '<div class="empty compact">No favorite recipes or custom meals saved yet.</div>'}
       </div>
     </div>
   `;
@@ -926,10 +950,6 @@ function applyFavoriteMealToForm(form, favorite) {
     if (select) select.value = favorite.id;
   }
 
-  if (favorite.type === 'restaurant') {
-    const select = form.querySelector('[name="restaurantId"]');
-    if (select) select.value = favorite.id;
-  }
 
   if (favorite.type === 'custom') {
     const customName = form.querySelector('[name="customName"]');
@@ -947,7 +967,7 @@ function applyFavoriteMealToForm(form, favorite) {
 function plannerMealItem(plan) {
   const isMenuOpen = String(state.openPlannerMealMenuId) === String(plan._id);
   return `
-    <article class="calendar-meal">
+    <article class="calendar-meal" data-plan-item="${plan._id}">
       <div class="calendar-meal-top">
         <div class="calendar-meal-main">
           <div class="badge-row">
