@@ -3163,21 +3163,23 @@ body.mobile-drawer-open .panel-edge-toggle {
 
 .restaurant-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 12px;
+  align-items: stretch;
 }
 
 .restaurant-card {
-  min-height: 230px;
-  aspect-ratio: 1 / 1;
+  position: relative;
+  min-height: 285px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px;
+  padding: 16px;
+  padding-right: 70px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .restaurant-card-top {
@@ -3187,23 +3189,146 @@ body.mobile-drawer-open .panel-edge-toggle {
   gap: 10px;
 }
 
-.restaurant-price {
+.restaurant-card-titleblock {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.restaurant-price-line {
+  margin-top: 4px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.restaurant-card-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.restaurant-favorite-btn,
+.restaurant-kebab-btn {
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 34px;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--brand-border);
+  padding: 0;
   border-radius: 9999px;
+  background: var(--white);
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.14s;
+}
+
+.restaurant-favorite-btn {
+  border: 1px solid rgba(229, 62, 62, 0.42);
+  color: var(--danger);
+}
+
+.restaurant-favorite-btn .material-symbols-outlined {
+  font-size: 17px;
+  font-variation-settings: 'FILL' 0, 'wght' 700, 'GRAD' 0, 'opsz' 20;
+}
+
+.restaurant-favorite-btn.active {
+  background: rgba(229, 62, 62, 0.1);
+  border-color: rgba(229, 62, 62, 0.55);
+}
+
+.restaurant-favorite-btn.active .material-symbols-outlined {
+  font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 20;
+}
+
+.restaurant-favorite-btn:hover {
+  background: rgba(229, 62, 62, 0.12);
+  border-color: var(--danger);
+}
+
+.restaurant-kebab-btn {
+  border: 1px solid var(--border-mid);
+  color: var(--text-secondary);
+}
+
+.restaurant-kebab-btn .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.restaurant-kebab-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.restaurant-menu-wrap {
+  position: relative;
+}
+
+.restaurant-action-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 20;
+  min-width: 128px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(0,0,0,0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.14s, visibility 0.14s;
+}
+
+.restaurant-action-menu.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.restaurant-action-menu button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.restaurant-action-menu button:hover {
   background: var(--brand-light);
   color: var(--brand);
-  font-size: 11px;
-  font-weight: 900;
+}
+
+.restaurant-action-menu .danger-menu-item {
+  color: var(--danger);
+}
+
+.restaurant-action-menu .danger-menu-item:hover {
+  background: rgba(229, 62, 62, 0.1);
+  color: var(--danger);
 }
 
 .restaurant-location {
   overflow-wrap: anywhere;
+}
+
+.restaurant-visits {
+  margin-top: auto;
 }
 
 .restaurant-card-actions {
@@ -3248,9 +3373,9 @@ body.mobile-drawer-open .panel-edge-toggle {
   }
 
   .restaurant-card {
-    min-height: 205px;
-    aspect-ratio: 1 / 1.08;
-    padding: 12px;
+    min-height: 255px;
+    padding: 13px;
+    padding-right: 64px;
   }
 }
 
@@ -3260,7 +3385,8 @@ body.mobile-drawer-open .panel-edge-toggle {
   }
 
   .restaurant-card {
-    aspect-ratio: auto;
     min-height: 0;
+    padding: 13px;
+    padding-right: 64px;
   }
 }

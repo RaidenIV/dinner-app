@@ -21,6 +21,7 @@ const state = {
   suggestions: [],
   restaurantSort: localStorage.getItem('mealPlannerRestaurantSort') || 'favorite',
   editingRestaurantId: '',
+  openRestaurantMenuId: '',
   socket: null,
   realtimeRefreshTimer: null,
   realtimeRefreshInFlight: false
@@ -1112,9 +1113,36 @@ function renderRestaurants() {
     renderRestaurants();
   });
 
+  pageRoot.querySelectorAll('[data-favorite-restaurant]').forEach(button => {
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const restaurant = state.restaurants.find(item => String(item._id) === String(button.dataset.favoriteRestaurant));
+      if (!restaurant) return;
+      button.disabled = true;
+      try {
+        await api(`/api/restaurants/${restaurant._id}`, { method: 'PUT', body: restaurantUpdateBody(restaurant, { favorite: !restaurant.favorite }) });
+        await Promise.all([loadRestaurants(), loadPlanner(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+        renderRestaurants();
+      } catch (error) {
+        showToast(error.message || 'Unable to update favorite.');
+        button.disabled = false;
+      }
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-restaurant-menu]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const restaurantId = button.dataset.restaurantMenu;
+      state.openRestaurantMenuId = String(state.openRestaurantMenuId) === String(restaurantId) ? '' : restaurantId;
+      renderRestaurants();
+    });
+  });
+
   pageRoot.querySelectorAll('[data-edit-restaurant]').forEach(button => {
     button.addEventListener('click', () => {
       state.editingRestaurantId = button.dataset.editRestaurant;
+      state.openRestaurantMenuId = '';
       renderRestaurants();
     });
   });
@@ -1122,6 +1150,7 @@ function renderRestaurants() {
   pageRoot.querySelectorAll('[data-cancel-restaurant-edit]').forEach(button => {
     button.addEventListener('click', () => {
       state.editingRestaurantId = '';
+      state.openRestaurantMenuId = '';
       renderRestaurants();
     });
   });
@@ -1136,6 +1165,7 @@ function renderRestaurants() {
         body.favorite = getFormCheckboxChecked(formElement, 'favorite');
         await api(`/api/restaurants/${restaurantId}`, { method: 'PUT', body });
         state.editingRestaurantId = '';
+        state.openRestaurantMenuId = '';
         await Promise.all([loadRestaurants(), loadPlanner(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
         renderRestaurants();
       }, 'Restaurant updated.');
@@ -1144,7 +1174,11 @@ function renderRestaurants() {
 
   pageRoot.querySelectorAll('[data-delete-restaurant]').forEach(button => {
     button.addEventListener('click', async () => {
+      const restaurant = state.restaurants.find(item => String(item._id) === String(button.dataset.deleteRestaurant));
+      const name = restaurant?.name || 'this restaurant';
+      if (!window.confirm(`Delete ${name}? This will also remove it from planned meals.`)) return;
       await api(`/api/restaurants/${button.dataset.deleteRestaurant}`, { method: 'DELETE' });
+      state.openRestaurantMenuId = '';
       await Promise.all([loadRestaurants(), loadPlanner(), loadStats()]);
       showToast('Restaurant deleted.');
       renderRestaurants();
@@ -1573,30 +1607,54 @@ function restaurantItem(restaurant) {
   if (String(state.editingRestaurantId) === String(restaurant._id)) return restaurantEditCard(restaurant);
   const dishes = (restaurant.favoriteDishes || []).join(', ');
   const tags = (restaurant.tags || []).join(', ');
+  const isMenuOpen = String(state.openRestaurantMenuId) === String(restaurant._id);
   return `
     <article class="restaurant-card">
+      <div class="restaurant-card-controls">
+        <button class="restaurant-favorite-btn ${restaurant.favorite ? 'active' : ''}" type="button" data-favorite-restaurant="${restaurant._id}" aria-label="${restaurant.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${restaurant.favorite ? 'true' : 'false'}">
+          <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
+        </button>
+        <div class="restaurant-menu-wrap">
+          <button class="restaurant-kebab-btn" type="button" data-restaurant-menu="${restaurant._id}" aria-label="Restaurant actions" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+            <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
+          </button>
+          <div class="restaurant-action-menu ${isMenuOpen ? 'open' : ''}">
+            <button type="button" data-edit-restaurant="${restaurant._id}">Edit</button>
+            <button class="danger-menu-item" type="button" data-delete-restaurant="${restaurant._id}">Delete</button>
+          </div>
+        </div>
+      </div>
       <div class="restaurant-card-top">
-        <div>
+        <div class="restaurant-card-titleblock">
           <h3>${escapeHtml(restaurant.name)}</h3>
           <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')}</p>
+          <p class="restaurant-price-line">${escapeHtml(restaurant.priceLevel || '$$')}</p>
         </div>
-        <span class="restaurant-price">${escapeHtml(restaurant.priceLevel || '$$')}</span>
       </div>
       <div class="badge-row">
-        ${restaurant.favorite ? '<span class="badge good">favorite</span>' : ''}
         ${restaurant.cuisine ? `<span class="badge accent">${escapeHtml(restaurant.cuisine)}</span>` : ''}
         <span class="badge">${starRating(restaurant.rating || 0)}</span>
       </div>
       ${dishes ? `<p><strong>Go-to:</strong> ${escapeHtml(dishes)}</p>` : ''}
       ${tags ? `<p class="muted">${escapeHtml(tags)}</p>` : ''}
       ${restaurant.location ? `<p class="restaurant-location">${escapeHtml(restaurant.location)}</p>` : ''}
-      <p class="muted">Visited ${restaurant.timesVisited || 0}x</p>
-      <div class="restaurant-card-actions">
-        <button class="secondary small-btn" type="button" data-edit-restaurant="${restaurant._id}">Edit</button>
-        <button class="danger small-btn" type="button" data-delete-restaurant="${restaurant._id}">Delete</button>
-      </div>
+      <p class="muted restaurant-visits">Visited ${restaurant.timesVisited || 0}x</p>
     </article>
   `;
+}
+
+function restaurantUpdateBody(restaurant, overrides = {}) {
+  return {
+    name: restaurant.name || '',
+    cuisine: restaurant.cuisine || '',
+    priceLevel: restaurant.priceLevel || '$$',
+    location: restaurant.location || '',
+    favoriteDishes: restaurant.favoriteDishes || [],
+    tags: restaurant.tags || [],
+    rating: Number(restaurant.rating || 0),
+    favorite: Boolean(restaurant.favorite),
+    ...overrides
+  };
 }
 
 function restaurantEditCard(restaurant) {
