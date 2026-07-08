@@ -32,7 +32,7 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(compression());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -87,6 +87,10 @@ const recipeSchema = new mongoose.Schema({
   tags: [{ type: String, trim: true }],
   rating: { type: Number, min: 0, max: 5, default: 0 },
   favorite: { type: Boolean, default: false },
+  originalScan: { type: String, default: '', maxlength: 1600000 },
+  originalScanName: { type: String, default: '', trim: true, maxlength: 160 },
+  importSource: { type: String, enum: ['', 'printed'], default: '' },
+  importNotes: { type: String, default: '', trim: true, maxlength: 500 },
   timesCooked: { type: Number, default: 0, min: 0 },
   lastCookedAt: { type: Date },
   createdBy: { type: objectId, ref: 'User' }
@@ -561,6 +565,10 @@ app.post('/api/recipes', authenticate, async (req, res) => {
       tags: normalizeTags(req.body.tags),
       rating: Number(req.body.rating || 0),
       favorite: Boolean(req.body.favorite),
+      originalScan: req.body.originalScan || '',
+      originalScanName: req.body.originalScanName || '',
+      importSource: req.body.importSource || '',
+      importNotes: req.body.importNotes || '',
       createdBy: req.user._id
     });
     res.status(201).json(recipe);
@@ -581,7 +589,11 @@ app.put('/api/recipes/:id', authenticate, async (req, res) => {
     difficulty: req.body.difficulty || 'easy',
     tags: normalizeTags(req.body.tags),
     rating: Number(req.body.rating || 0),
-    favorite: Boolean(req.body.favorite)
+    favorite: Boolean(req.body.favorite),
+    originalScan: req.body.originalScan || '',
+    originalScanName: req.body.originalScanName || '',
+    importSource: req.body.importSource || '',
+    importNotes: req.body.importNotes || ''
   };
   const recipe = await Recipe.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
   if (!recipe) return res.status(404).json({ error: 'Recipe not found.' });

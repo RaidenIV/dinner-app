@@ -21,6 +21,8 @@ const state = {
   suggestions: []
 };
 
+let recipeImportScan = { dataUrl: '', name: '', type: '' };
+
 const $ = selector => document.querySelector(selector);
 const pageRoot = $('#page-root');
 const toast = $('#toast');
@@ -619,7 +621,10 @@ function renderRecipes() {
   pageRoot.innerHTML = `
     <section class="grid two">
       <form id="recipe-form" class="form-card">
-        <h3>Add Recipe</h3>
+        <div class="form-heading-row">
+          <h3>Add Recipe</h3>
+          <button class="secondary small-btn" id="open-recipe-import" type="button"><i class="ti ti-camera"></i>Import Printed Recipe</button>
+        </div>
         <div class="form-grid">
           <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
           <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
@@ -649,6 +654,8 @@ function renderRecipes() {
     </section>
   `;
 
+  $('#open-recipe-import')?.addEventListener('click', openRecipeImportModal);
+
   $('#recipe-form').addEventListener('submit', async event => {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -665,6 +672,13 @@ function renderRecipes() {
     }, 'Recipe saved.');
   });
 
+  pageRoot.querySelectorAll('[data-view-recipe-scan]').forEach(button => {
+    button.addEventListener('click', () => {
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.viewRecipeScan));
+      openRecipeScan(recipe);
+    });
+  });
+
   pageRoot.querySelectorAll('[data-delete-recipe]').forEach(button => {
     button.addEventListener('click', async () => {
       await api(`/api/recipes/${button.dataset.deleteRecipe}`, { method: 'DELETE' });
@@ -673,6 +687,292 @@ function renderRecipes() {
       renderRecipes();
     });
   });
+}
+
+function openRecipeImportModal() {
+  closeMobileWebSidebarForModal();
+  recipeImportScan = { dataUrl: '', name: '', type: '' };
+  document.querySelector('.recipe-import-overlay')?.remove();
+  document.body.classList.add('modal-open');
+
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-import-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-import-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-import-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-import-title">Import Printed Recipe</h3>
+          <p class="muted">Upload a photo or PDF, review the details, then save it to your recipe library.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
+            <div class="recipe-import-upload">
+              <label class="wide">Recipe Photo or PDF
+                <input id="recipe-import-file" name="recipeFile" type="file" accept="image/*,application/pdf" capture="environment" />
+              </label>
+              <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
+            </div>
+            <label class="wide">Extracted or Typed Text <span class="optional">paste OCR text here if you have it</span><textarea name="importText" placeholder="Paste detected recipe text, or type from the printed page."></textarea></label>
+            <div class="action-row recipe-import-actions">
+              <button class="secondary" id="recipe-import-parse" type="button"><i class="ti ti-wand"></i>Fill From Text</button>
+              <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
+            </div>
+            <div class="form-grid compact-form-grid recipe-import-fields">
+              <label>Name<input name="name" required placeholder="Grandma's lasagna" /></label>
+              <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" /></label>
+              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" /></label>
+              <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" /></label>
+              <label>Prep Time
+                <span class="duration-clock" aria-label="Prep time duration">
+                  <input name="importPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+                  <span class="duration-separator" aria-hidden="true">:</span>
+                  <input name="importPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+                </span>
+              </label>
+              <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+              <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+              <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
+              <label class="wide">Ingredients<textarea name="ingredientsText" placeholder="One ingredient per line"></textarea></label>
+              <label class="wide">Instructions<textarea name="instructions" placeholder="Recipe steps"></textarea></label>
+              <label class="wide">Import Notes<input name="importNotes" placeholder="Binder page, handwritten note, source, etc." /></label>
+              <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+            </div>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
+              <button class="primary" type="submit">Save Imported Recipe</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closeRecipeImportModal();
+  });
+  overlay.querySelectorAll('[data-close-recipe-import]').forEach(button => button.addEventListener('click', closeRecipeImportModal));
+  overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
+  overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
+  overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
+  overlay.querySelector('#recipe-import-form')?.addEventListener('submit', saveImportedRecipe);
+}
+
+function closeRecipeImportModal() {
+  const overlay = document.querySelector('.recipe-import-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.classList.add('closing');
+  window.setTimeout(() => {
+    overlay.remove();
+    if (!document.querySelector('.time-modal-overlay.open')) document.body.classList.remove('modal-open');
+  }, 180);
+}
+
+async function handleRecipeImportFile(event) {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  const preview = document.querySelector('#recipe-import-preview');
+  try {
+    recipeImportScan = await recipeSourceFileToDataUrl(file);
+    if (preview) {
+      preview.classList.remove('empty');
+      preview.innerHTML = recipeImportScan.type.startsWith('image/')
+        ? `<img src="${escapeAttr(recipeImportScan.dataUrl)}" alt="Uploaded recipe scan" /><span>${escapeHtml(recipeImportScan.name)}</span>`
+        : `<div><i class="ti ti-file-type-pdf"></i><strong>${escapeHtml(recipeImportScan.name)}</strong><p class="muted">PDF scan attached.</p></div>`;
+    }
+    const nameInput = document.querySelector('#recipe-import-form [name="name"]');
+    if (nameInput && !nameInput.value.trim()) nameInput.value = titleFromFileName(file.name);
+  } catch (error) {
+    recipeImportScan = { dataUrl: '', name: '', type: '' };
+    if (preview) {
+      preview.classList.add('empty');
+      preview.textContent = 'No scan selected.';
+    }
+    showToast(error.message || 'Unable to read recipe scan.');
+  }
+}
+
+function clearRecipeImportScan() {
+  recipeImportScan = { dataUrl: '', name: '', type: '' };
+  const fileInput = document.querySelector('#recipe-import-file');
+  const preview = document.querySelector('#recipe-import-preview');
+  if (fileInput) fileInput.value = '';
+  if (preview) {
+    preview.classList.add('empty');
+    preview.textContent = 'No scan selected.';
+  }
+}
+
+function fillRecipeImportFromText(form) {
+  if (!form) return;
+  const text = form.elements.importText?.value || '';
+  const parsed = parseImportedRecipeText(text, recipeImportScan.name);
+  if (parsed.name && !form.elements.name.value.trim()) form.elements.name.value = parsed.name;
+  if (parsed.ingredientsText && !form.elements.ingredientsText.value.trim()) form.elements.ingredientsText.value = parsed.ingredientsText;
+  if (parsed.instructions && !form.elements.instructions.value.trim()) form.elements.instructions.value = parsed.instructions;
+  if (parsed.prepTime) setDurationInputs(form, 'importPrep', parsed.prepTime);
+  if (parsed.cookTime && !Number(form.elements.cookTime.value)) form.elements.cookTime.value = parsed.cookTime;
+  showToast('Import fields filled from text. Review before saving.');
+}
+
+async function saveImportedRecipe(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  await withSaveFeedback(formElement, async () => {
+    const body = formToBody(formElement);
+    delete body.recipeFile;
+    delete body.importText;
+    body.prepTime = durationInputsToMinutes(formElement, 'importPrep');
+    delete body.importPrepHours;
+    delete body.importPrepMinutes;
+    body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+    body.originalScan = recipeImportScan.dataUrl;
+    body.originalScanName = recipeImportScan.name;
+    body.importSource = 'printed';
+    await api('/api/recipes', { method: 'POST', body });
+    await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+    closeRecipeImportModal();
+    renderRecipes();
+  }, 'Printed recipe imported.');
+}
+
+async function recipeSourceFileToDataUrl(file) {
+  const isImage = file.type.startsWith('image/');
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  if (!isImage && !isPdf) throw new Error('Please choose an image or PDF file.');
+
+  if (isPdf) {
+    if (file.size > 1200000) throw new Error('PDF scan is too large. Please upload a smaller file or use a photo.');
+    return { dataUrl: await fileToDataUrl(file), name: file.name, type: file.type || 'application/pdf' };
+  }
+
+  const rawDataUrl = await fileToDataUrl(file);
+  const image = await new Promise((resolve, reject) => {
+    const source = new Image();
+    source.onload = () => resolve(source);
+    source.onerror = () => reject(new Error('Unable to process the selected image.'));
+    source.src = rawDataUrl;
+  });
+
+  const maxEdge = 1400;
+  const width = image.naturalWidth || image.width || 1;
+  const height = image.naturalHeight || image.height || 1;
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) return { dataUrl: rawDataUrl, name: file.name, type: file.type };
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  let optimized = canvas.toDataURL('image/webp', 0.82);
+  if (!optimized || optimized === 'data:,') optimized = canvas.toDataURL('image/jpeg', 0.82);
+  if (optimized.length > 1500000) throw new Error('Recipe scan is too large. Please crop the photo or use a smaller image.');
+  return { dataUrl: optimized, name: file.name, type: file.type };
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read the selected file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function parseImportedRecipeText(text, fileName = '') {
+  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const title = lines.find(line => !isRecipeSectionLabel(line) && !isRecipeMetaLine(line)) || titleFromFileName(fileName);
+  const ingredientIndex = lines.findIndex(line => /^ingredients?[:]?$/i.test(line));
+  const instructionIndex = lines.findIndex(line => /^(instructions?|directions?|method|preparation|steps)[:]?$/i.test(line));
+  let ingredientLines = [];
+  let instructionLines = [];
+
+  if (ingredientIndex >= 0) {
+    const end = instructionIndex > ingredientIndex ? instructionIndex : lines.length;
+    ingredientLines = lines.slice(ingredientIndex + 1, end);
+  }
+
+  if (instructionIndex >= 0) {
+    instructionLines = lines.slice(instructionIndex + 1);
+  }
+
+  if (!ingredientLines.length && !instructionLines.length) {
+    const numberedIndex = lines.findIndex(line => /^\d+[.)]\s+/.test(line));
+    if (numberedIndex > 1) {
+      ingredientLines = lines.slice(1, numberedIndex);
+      instructionLines = lines.slice(numberedIndex);
+    }
+  }
+
+  const prepTime = findRecipeDuration(lines, /prep(?:aration)?\s*time/i);
+  const cookTime = findRecipeDuration(lines, /cook(?:ing)?\s*time/i);
+
+  return {
+    name: title,
+    ingredientsText: ingredientLines.filter(line => !isRecipeSectionLabel(line) && !isRecipeMetaLine(line)).join('\n'),
+    instructions: instructionLines.filter(line => !isRecipeSectionLabel(line)).join('\n'),
+    prepTime,
+    cookTime
+  };
+}
+
+function isRecipeSectionLabel(line) {
+  return /^(ingredients?|instructions?|directions?|method|preparation|steps)[:]?$/i.test(String(line || '').trim());
+}
+
+function isRecipeMetaLine(line) {
+  return /^(prep|cook|total|serves|servings|yield)\b/i.test(String(line || '').trim());
+}
+
+function findRecipeDuration(lines, labelPattern) {
+  const line = lines.find(item => labelPattern.test(item));
+  if (!line) return 0;
+  const hoursMatch = line.match(/(\d+)\s*(?:h|hr|hrs|hour|hours)\b/i);
+  const minutesMatch = line.match(/(\d+)\s*(?:m|min|mins|minute|minutes)\b/i);
+  const plainMatch = line.match(/:\s*(\d+)\b/);
+  const hours = hoursMatch ? Number(hoursMatch[1]) : 0;
+  const minutes = minutesMatch ? Number(minutesMatch[1]) : plainMatch ? Number(plainMatch[1]) : 0;
+  return Math.max(0, (hours * 60) + minutes);
+}
+
+function setDurationInputs(form, prefix, totalMinutes) {
+  const total = Math.max(0, Math.round(Number(totalMinutes) || 0));
+  const hoursInput = form.querySelector(`[name="${prefix}Hours"]`);
+  const minutesInput = form.querySelector(`[name="${prefix}Minutes"]`);
+  if (hoursInput) hoursInput.value = String(Math.floor(total / 60)).padStart(2, '0');
+  if (minutesInput) minutesInput.value = String(total % 60).padStart(2, '0');
+}
+
+function titleFromFileName(fileName) {
+  return String(fileName || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function openRecipeScan(recipe) {
+  if (!recipe?.originalScan) {
+    showToast('No original scan is attached to this recipe.');
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = recipe.originalScan;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.download = recipe.originalScanName || `${slugify(recipe.name || 'recipe')}-scan`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function renderRestaurants() {
@@ -1084,12 +1384,17 @@ function recipeItem(recipe) {
     <div class="list-item">
       <div class="list-title">
         <strong>${escapeHtml(recipe.name)}</strong>
-        <button class="danger small-btn" data-delete-recipe="${recipe._id}">Delete</button>
+        <span class="item-actions">
+          ${recipe.originalScan ? `<button class="small-btn" type="button" data-view-recipe-scan="${recipe._id}">View Scan</button>` : ''}
+          <button class="danger small-btn" data-delete-recipe="${recipe._id}">Delete</button>
+        </span>
       </div>
       <div class="badge-row">
         ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
         ${recipe.favorite ? '<span class="badge good">favorite</span>' : ''}
+        ${recipe.importSource === 'printed' ? '<span class="badge">printed import</span>' : ''}
+        ${recipe.originalScan ? '<span class="badge">scan saved</span>' : ''}
       </div>
       <p class="muted">${formatDurationMinutes(recipe.prepTime || 0)} prep • ${formatDurationMinutes(recipe.cookTime || 0)} cook • ${starRating(recipe.rating || 0)} • cooked ${recipe.timesCooked || 0}x</p>
       ${(recipe.ingredients || []).length ? `<p>${recipe.ingredients.slice(0, 4).map(item => escapeHtml(item.name)).join(', ')}${recipe.ingredients.length > 4 ? '…' : ''}</p>` : ''}
