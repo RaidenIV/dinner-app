@@ -121,10 +121,21 @@ function bindShell() {
   });
 
   document.addEventListener('click', event => {
-    if (!state.openPlannerMealMenuId) return;
-    if (event.target.closest('[data-plan-menu], .meal-action-menu')) return;
-    state.openPlannerMealMenuId = '';
-    if (state.page === 'planner') renderPlanner();
+    let shouldRenderPlanner = false;
+    let shouldRenderRestaurants = false;
+
+    if (state.openPlannerMealMenuId && !event.target.closest('[data-plan-menu], .meal-action-menu')) {
+      state.openPlannerMealMenuId = '';
+      shouldRenderPlanner = state.page === 'planner';
+    }
+
+    if (state.openRestaurantMenuId && !event.target.closest('[data-restaurant-menu], .restaurant-action-menu')) {
+      state.openRestaurantMenuId = '';
+      shouldRenderRestaurants = state.page === 'restaurants';
+    }
+
+    if (shouldRenderPlanner) renderPlanner();
+    if (shouldRenderRestaurants) renderRestaurants();
   });
 
   $('#quick-suggest-btn').addEventListener('click', async () => {
@@ -1371,16 +1382,30 @@ function renderRestaurants() {
         </div>
         <button class="primary full" type="submit">Save Restaurant</button>
       </form>
-      <article class="card" id="random-form">
-        <h3>Random Restaurant Selector</h3>
-        <p class="muted">Pick a food mood and let the app choose from your saved spots.</p>
-        <form id="random-restaurant-form" class="form-grid">
-          <label>Cuisine / Mood<input name="cuisine" placeholder="pizza, Mexican, burgers" /></label>
-          <label>Tag<input name="tag" placeholder="delivery, cheap, date night" /></label>
-          <label>Price<select name="priceLevel"><option value="">Any</option><option>$</option><option>$$</option><option>$$$</option><option>$$$$</option></select></label>
-          <button class="primary" type="submit">Pick One</button>
+      <article class="card random-restaurant-card" id="random-form">
+        <div class="slot-machine-head">
+          <div>
+            <h3>Random Restaurant Selector</h3>
+            <p class="muted">Set your filters and spin for dinner.</p>
+          </div>
+          <span class="slot-machine-light" aria-hidden="true"></span>
+        </div>
+        <form id="random-restaurant-form" class="slot-machine-form">
+          <label class="slot-price-control">Max Price
+            <select name="maxPrice">
+              <option value="">Any</option>
+              <option value="$">$</option>
+              <option value="$$">$$</option>
+              <option value="$$$">$$$</option>
+              <option value="$$$$">$$$$</option>
+            </select>
+          </label>
+          ${restaurantRandomFilterGroups()}
+          <button class="primary slot-spin-btn" type="submit">Spin</button>
         </form>
-        <div id="random-result" class="list"></div>
+        <div id="random-result" class="slot-machine-result">
+          ${slotMachinePlaceholder()}
+        </div>
       </article>
     </section>
     <section class="card restaurant-list-section">
@@ -1415,16 +1440,9 @@ function renderRestaurants() {
     }, 'Restaurant saved.');
   });
 
-  $('#random-restaurant-form').addEventListener('submit', async event => {
+  $('#random-restaurant-form').addEventListener('submit', event => {
     event.preventDefault();
-    const values = formToBody(event.currentTarget);
-    const query = new URLSearchParams(Object.fromEntries(Object.entries(values).filter(([, value]) => value))).toString();
-    try {
-      const result = await api(`/api/restaurants/random${query ? `?${query}` : ''}`);
-      $('#random-result').innerHTML = `<div class="list-item"><strong>${escapeHtml(result.pick.name)}</strong><p class="muted">${escapeHtml(result.pick.cuisine || 'Any cuisine')} • ${result.pick.priceLevel} • ${starRating(result.pick.rating || 0)}</p><p>${escapeHtml((result.pick.tags || []).join(', ') || 'No tags yet')}</p></div>`;
-    } catch (error) {
-      $('#random-result').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
-    }
+    spinRandomRestaurant(event.currentTarget);
   });
 
   $('#restaurant-sort-select')?.addEventListener('change', event => {
@@ -1914,6 +1932,160 @@ function recipeItem(recipe) {
       </div>
       <p class="muted">${formatDurationMinutes(recipe.prepTime || 0)} prep • ${formatDurationMinutes(recipe.cookTime || 0)} cook • ${starRating(recipe.rating || 0)} • cooked ${recipe.timesCooked || 0}x</p>
       ${(recipe.ingredients || []).length ? `<p>${recipe.ingredients.slice(0, 4).map(item => escapeHtml(item.name)).join(', ')}${recipe.ingredients.length > 4 ? '…' : ''}</p>` : ''}
+    </div>
+  `;
+}
+
+
+function restaurantRandomFilterGroups() {
+  const cuisineValues = [...new Set(state.restaurants.map(restaurant => String(restaurant.cuisine || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  return `
+    <div class="slot-filter-group">
+      <span class="slot-filter-label">Cuisine</span>
+      <div class="slot-checkbox-grid">
+        ${cuisineValues.length ? cuisineValues.map(cuisine => slotCheckbox('cuisines', cuisine, cuisine)).join('') : '<span class="muted">Add cuisines to restaurants to filter by type.</span>'}
+      </div>
+    </div>
+    <div class="slot-filter-group">
+      <span class="slot-filter-label">Rating</span>
+      <div class="slot-checkbox-grid compact">
+        ${[1, 2, 3, 4, 5].map(rating => slotCheckbox('ratings', String(rating), starRating(rating))).join('')}
+      </div>
+    </div>
+    <div class="slot-filter-group single">
+      ${slotCheckbox('favoriteOnly', '1', 'Favorited only')}
+    </div>
+  `;
+}
+
+function slotCheckbox(name, value, label) {
+  const id = `slot-${name}-${slugify(value) || 'option'}`;
+  return `
+    <label class="slot-check" for="${escapeAttr(id)}">
+      <input id="${escapeAttr(id)}" type="checkbox" name="${escapeAttr(name)}" value="${escapeAttr(value)}" />
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `;
+}
+
+function slotMachinePlaceholder() {
+  return `
+    <div class="slot-machine-window" aria-live="polite">
+      <div class="slot-reel"><span>Ready</span></div>
+      <div class="slot-reel"><span>Set</span></div>
+      <div class="slot-reel"><span>Spin</span></div>
+    </div>
+    <p class="muted slot-machine-hint">Your pick will land here.</p>
+  `;
+}
+
+function getRandomRestaurantFilters(form) {
+  const formData = new FormData(form);
+  return {
+    maxPrice: String(formData.get('maxPrice') || ''),
+    cuisines: formData.getAll('cuisines').map(value => String(value).toLowerCase()),
+    ratings: formData.getAll('ratings').map(value => Number(value)).filter(Boolean),
+    favoriteOnly: formData.get('favoriteOnly') === '1'
+  };
+}
+
+function getFilteredRandomRestaurants(filters) {
+  const maxPriceRank = filters.maxPrice ? filters.maxPrice.length : Infinity;
+  return state.restaurants.filter(restaurant => {
+    const priceRank = String(restaurant.priceLevel || '$$').length;
+    const cuisine = String(restaurant.cuisine || '').toLowerCase();
+    const roundedRating = Math.max(0, Math.min(5, Math.round(Number(restaurant.rating || 0))));
+
+    if (priceRank > maxPriceRank) return false;
+    if (filters.cuisines.length && !filters.cuisines.includes(cuisine)) return false;
+    if (filters.ratings.length && !filters.ratings.includes(roundedRating)) return false;
+    if (filters.favoriteOnly && !restaurant.favorite) return false;
+    return true;
+  });
+}
+
+function pickWeightedRestaurant(restaurants) {
+  if (!restaurants.length) return null;
+  const now = Date.now();
+  const weighted = restaurants.flatMap(restaurant => {
+    const ratingBoost = Math.max(1, Math.round(Number(restaurant.rating || 0) + 1));
+    const favoriteBoost = restaurant.favorite ? 3 : 0;
+    const daysSince = restaurant.lastVisitedAt
+      ? Math.min(14, Math.floor((now - new Date(restaurant.lastVisitedAt).getTime()) / 86400000))
+      : 14;
+    const recencyBoost = Math.max(1, Math.floor(daysSince / 3));
+    return Array.from({ length: ratingBoost + favoriteBoost + recencyBoost }, () => restaurant);
+  });
+  return weighted[Math.floor(Math.random() * weighted.length)] || restaurants[Math.floor(Math.random() * restaurants.length)];
+}
+
+function spinRandomRestaurant(form) {
+  const resultRoot = $('#random-result');
+  const submitButton = form.querySelector('[type="submit"]');
+  if (!resultRoot) return;
+
+  const filters = getRandomRestaurantFilters(form);
+  const candidates = getFilteredRandomRestaurants(filters);
+
+  if (!candidates.length) {
+    resultRoot.innerHTML = '<div class="empty">No saved restaurants match those filters.</div>';
+    return;
+  }
+
+  const pick = pickWeightedRestaurant(candidates);
+  const reelItems = candidates.length >= 3 ? candidates : [...candidates, ...candidates, ...candidates];
+  let tick = 0;
+  submitButton.disabled = true;
+  resultRoot.classList.add('spinning');
+  resultRoot.innerHTML = `
+    <div class="slot-machine-window spinning" aria-live="polite">
+      <div class="slot-reel"><span>${escapeHtml(reelItems[0]?.name || 'Spin')}</span></div>
+      <div class="slot-reel"><span>${escapeHtml(reelItems[1]?.cuisine || 'Any')}</span></div>
+      <div class="slot-reel"><span>${escapeHtml(reelItems[2]?.priceLevel || '$$')}</span></div>
+    </div>
+    <p class="muted slot-machine-hint">Spinning through ${candidates.length} matching ${candidates.length === 1 ? 'spot' : 'spots'}...</p>
+  `;
+
+  const interval = window.setInterval(() => {
+    tick += 1;
+    const reels = resultRoot.querySelectorAll('.slot-reel span');
+    reels.forEach((reel, index) => {
+      const restaurant = reelItems[(tick + index) % reelItems.length];
+      if (!restaurant) return;
+      const values = [restaurant.name, restaurant.cuisine || 'Any cuisine', restaurant.priceLevel || '$$'];
+      reel.textContent = values[index] || restaurant.name;
+    });
+  }, 72);
+
+  window.setTimeout(() => {
+    window.clearInterval(interval);
+    submitButton.disabled = false;
+    resultRoot.classList.remove('spinning');
+    resultRoot.innerHTML = renderSlotMachinePick(pick, candidates.length);
+  }, 1100);
+}
+
+function renderSlotMachinePick(restaurant, poolSize) {
+  const dishes = (restaurant.favoriteDishes || []).join(', ');
+  const tags = (restaurant.tags || []).join(', ');
+  return `
+    <div class="slot-machine-pick">
+      <div class="slot-machine-window settled">
+        <div class="slot-reel winner"><span>${escapeHtml(restaurant.name || 'Restaurant')}</span></div>
+        <div class="slot-reel"><span>${escapeHtml(restaurant.cuisine || 'Any cuisine')}</span></div>
+        <div class="slot-reel"><span>${escapeHtml(restaurant.priceLevel || '$$')}</span></div>
+      </div>
+      <div class="slot-pick-details">
+        <div>
+          <strong>${escapeHtml(restaurant.name || 'Restaurant')}</strong>
+          <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')} • ${escapeHtml(restaurant.priceLevel || '$$')} • ${starRating(restaurant.rating || 0)}</p>
+        </div>
+        <span class="badge accent">${poolSize} match${poolSize === 1 ? '' : 'es'}</span>
+      </div>
+      ${dishes ? `<p><strong>Go-to:</strong> ${escapeHtml(dishes)}</p>` : ''}
+      ${tags ? `<p class="muted">${escapeHtml(tags)}</p>` : ''}
     </div>
   `;
 }

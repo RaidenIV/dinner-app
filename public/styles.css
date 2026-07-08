@@ -3890,3 +3890,198 @@ body.mobile-drawer-open .panel-edge-toggle {
     grid-template-columns: 1fr;
   }
 }
+
+/* Slot machine random restaurant selector */
+.random-restaurant-card {
+  overflow: hidden;
+}
+
+.slot-machine-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.slot-machine-light {
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--brand);
+  box-shadow: 0 0 0 5px var(--brand-light);
+  flex: 0 0 auto;
+}
+
+.slot-machine-form {
+  display: grid;
+  gap: 12px;
+}
+
+.slot-price-control {
+  display: grid;
+  gap: 6px;
+}
+
+.slot-filter-group {
+  display: grid;
+  gap: 8px;
+}
+
+.slot-filter-group.single {
+  margin-top: -2px;
+}
+
+.slot-filter-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.slot-checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.slot-checkbox-grid.compact {
+  gap: 6px;
+}
+
+.slot-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.slot-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.slot-check span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.14s;
+}
+
+.slot-check input:checked + span {
+  border-color: var(--brand-border);
+  background: var(--brand-light);
+  color: var(--brand);
+  transform: translateY(-1px);
+}
+
+.slot-spin-btn {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 2px;
+}
+
+.slot-machine-result {
+  margin-top: 14px;
+}
+
+.slot-machine-window {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.7fr;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.slot-reel {
+  min-width: 0;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid var(--border-mid);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-align: center;
+  overflow: hidden;
+}
+
+.slot-reel span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-machine-window.spinning .slot-reel span {
+  animation: slotReelTick 0.16s linear infinite;
+}
+
+.slot-machine-window.settled {
+  border-color: var(--brand-border);
+  background: var(--brand-light);
+}
+
+.slot-reel.winner {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.slot-machine-hint {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.slot-machine-pick {
+  display: grid;
+  gap: 10px;
+}
+
+.slot-pick-details {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+@keyframes slotReelTick {
+  0% { transform: translateY(-8px); opacity: 0.55; }
+  50% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(8px); opacity: 0.55; }
+}
+
+@media (max-width: 780px) {
+  .slot-machine-window {
+    grid-template-columns: 1fr;
+  }
+
+  .slot-reel {
+    min-height: 40px;
+  }
+
+  .slot-pick-details {
+    flex-direction: column;
+  }
+}
