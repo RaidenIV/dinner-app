@@ -2,6 +2,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import { createServer } from 'node:http';
 import express from 'express';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
@@ -10,11 +11,16 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import { Server as SocketIOServer } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: { origin: true }
+});
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -159,6 +165,44 @@ const Restaurant = mongoose.model('Restaurant', restaurantSchema);
 const MealPlan = mongoose.model('MealPlan', mealPlanSchema);
 const GroceryItem = mongoose.model('GroceryItem', groceryItemSchema);
 const MealHistory = mongoose.model('MealHistory', mealHistorySchema);
+
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || '';
+    if (!token) return next(new Error('Missing auth token.'));
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(payload.userId).lean();
+    if (!user) return next(new Error('Invalid auth token.'));
+    socket.userId = user._id.toString();
+    socket.householdId = user.householdId.toString();
+    return next();
+  } catch (error) {
+    return next(new Error('Invalid or expired auth token.'));
+  }
+});
+
+io.on('connection', socket => {
+  if (socket.householdId) socket.join(`household:${socket.householdId}`);
+});
+
+function broadcastHouseholdUpdate(req, type, details = {}) {
+  const householdId = req.householdId?.toString?.() || String(req.householdId || '');
+  if (!householdId) return;
+  const senderSocketId = req.get?.('x-socket-id');
+  const payload = {
+    type,
+    householdId,
+    actorId: req.user?._id?.toString?.() || String(req.user?._id || ''),
+    at: new Date().toISOString(),
+    ...details
+  };
+  const room = `household:${householdId}`;
+  if (senderSocketId) {
+    io.to(room).except(senderSocketId).emit('household:update', payload);
+    return;
+  }
+  io.to(room).emit('household:update', payload);
+}
 
 function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -444,6 +488,7 @@ app.put('/api/account', authenticate, async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true, runValidators: true });
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
+    broadcastHouseholdUpdate(req, 'account:updated', { userId: user._id.toString() });
     res.json({ user: publicUser(user) });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Account update failed.' });
@@ -525,6 +570,7 @@ app.post('/api/household/invites', authenticate, async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
+    broadcastHouseholdUpdate(req, 'household:invite-created', { inviteId: invite._id.toString() });
     res.status(201).json({ invite: publicInvite(invite), householdName: household.name });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unable to create invite.' });
@@ -567,6 +613,12 @@ app.post('/api/household/join', authenticate, async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
+    io.to(`household:${household._id.toString()}`).emit('household:update', {
+      type: 'household:member-joined',
+      householdId: household._id.toString(),
+      actorId: updatedUser._id.toString(),
+      at: new Date().toISOString()
+    });
     res.json({ user: publicUser(updatedUser), household: household.toObject() });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unable to join household.' });
@@ -577,6 +629,7 @@ app.patch('/api/household', authenticate, async (req, res) => {
   const update = {};
   if (req.body.name) update.name = String(req.body.name).trim();
   const household = await Household.findByIdAndUpdate(req.householdId, update, { new: true }).lean();
+  broadcastHouseholdUpdate(req, 'household:updated');
   res.json(household);
 });
 
@@ -613,6 +666,7 @@ app.post('/api/recipes', authenticate, async (req, res) => {
       importNotes: req.body.importNotes || '',
       createdBy: req.user._id
     });
+    broadcastHouseholdUpdate(req, 'recipes:created', { recipeId: recipe._id.toString() });
     res.status(201).json(recipe);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not create recipe.' });
@@ -639,12 +693,14 @@ app.put('/api/recipes/:id', authenticate, async (req, res) => {
   };
   const recipe = await Recipe.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
   if (!recipe) return res.status(404).json({ error: 'Recipe not found.' });
+  broadcastHouseholdUpdate(req, 'recipes:updated', { recipeId: recipe._id.toString() });
   res.json(recipe);
 });
 
 app.delete('/api/recipes/:id', authenticate, async (req, res) => {
   await Recipe.deleteOne({ _id: req.params.id, householdId: req.householdId });
   await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'recipe', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted recipe' });
+  broadcastHouseholdUpdate(req, 'recipes:deleted', { recipeId: req.params.id });
   res.json({ ok: true });
 });
 
@@ -674,6 +730,7 @@ app.post('/api/restaurants', authenticate, async (req, res) => {
       favorite: Boolean(req.body.favorite),
       createdBy: req.user._id
     });
+    broadcastHouseholdUpdate(req, 'restaurants:created', { restaurantId: restaurant._id.toString() });
     res.status(201).json(restaurant);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not create restaurant.' });
@@ -693,12 +750,14 @@ app.put('/api/restaurants/:id', authenticate, async (req, res) => {
   };
   const restaurant = await Restaurant.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });
+  broadcastHouseholdUpdate(req, 'restaurants:updated', { restaurantId: restaurant._id.toString() });
   res.json(restaurant);
 });
 
 app.delete('/api/restaurants/:id', authenticate, async (req, res) => {
   await Restaurant.deleteOne({ _id: req.params.id, householdId: req.householdId });
   await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'restaurant', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted restaurant' });
+  broadcastHouseholdUpdate(req, 'restaurants:deleted', { restaurantId: req.params.id });
   res.json({ ok: true });
 });
 
@@ -762,6 +821,7 @@ app.put('/api/planner/slot', authenticate, async (req, res) => {
     );
 
     await upsertHistoryFromPlan(plan, req.user._id);
+    broadcastHouseholdUpdate(req, 'planner:updated', { planId: plan._id.toString() });
     res.json(plan);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not update meal slot.' });
@@ -770,6 +830,7 @@ app.put('/api/planner/slot', authenticate, async (req, res) => {
 
 app.delete('/api/planner/:id', authenticate, async (req, res) => {
   await MealPlan.deleteOne({ _id: req.params.id, householdId: req.householdId });
+  broadcastHouseholdUpdate(req, 'planner:deleted', { planId: req.params.id });
   res.json({ ok: true });
 });
 
@@ -790,6 +851,7 @@ app.post('/api/grocery', authenticate, async (req, res) => {
       addedBy: req.user._id,
       recipeId: req.body.recipeId || null
     });
+    broadcastHouseholdUpdate(req, 'grocery:created', { itemId: item._id.toString() });
     res.status(201).json(item);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not create grocery item.' });
@@ -806,16 +868,19 @@ app.put('/api/grocery/:id', authenticate, async (req, res) => {
   };
   const item = await GroceryItem.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
   if (!item) return res.status(404).json({ error: 'Grocery item not found.' });
+  broadcastHouseholdUpdate(req, 'grocery:updated', { itemId: item._id.toString() });
   res.json(item);
 });
 
 app.delete('/api/grocery/:id', authenticate, async (req, res) => {
   await GroceryItem.deleteOne({ _id: req.params.id, householdId: req.householdId });
+  broadcastHouseholdUpdate(req, 'grocery:deleted', { itemId: req.params.id });
   res.json({ ok: true });
 });
 
 app.post('/api/grocery/clear-checked', authenticate, async (req, res) => {
   const result = await GroceryItem.deleteMany({ householdId: req.householdId, checked: true });
+  broadcastHouseholdUpdate(req, 'grocery:cleared', { deleted: result.deletedCount });
   res.json({ ok: true, deleted: result.deletedCount });
 });
 
@@ -848,6 +913,7 @@ app.post('/api/grocery/generate-from-plan', authenticate, async (req, res) => {
       }
     }
 
+    broadcastHouseholdUpdate(req, 'grocery:generated', { createdCount: created.length });
     res.status(201).json({ createdCount: created.length, items: created });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not generate grocery list.' });
@@ -876,6 +942,7 @@ app.post('/api/history', authenticate, async (req, res) => {
       cost: Number(req.body.cost || 0),
       createdBy: req.user._id
     });
+    broadcastHouseholdUpdate(req, 'history:created', { historyId: history._id.toString() });
     res.status(201).json(history);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not add meal history.' });
@@ -884,6 +951,7 @@ app.post('/api/history', authenticate, async (req, res) => {
 
 app.delete('/api/history/:id', authenticate, async (req, res) => {
   await MealHistory.deleteOne({ _id: req.params.id, householdId: req.householdId });
+  broadcastHouseholdUpdate(req, 'history:deleted', { historyId: req.params.id });
   res.json({ ok: true });
 });
 
@@ -1009,6 +1077,6 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Unexpected server error.' });
 });
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Meal planner running on port ${PORT}`);
 });

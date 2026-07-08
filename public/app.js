@@ -18,7 +18,12 @@ const state = {
   grocery: [],
   history: [],
   stats: null,
-  suggestions: []
+  suggestions: [],
+  restaurantSort: localStorage.getItem('mealPlannerRestaurantSort') || 'favorite',
+  editingRestaurantId: '',
+  socket: null,
+  realtimeRefreshTimer: null,
+  realtimeRefreshInFlight: false
 };
 
 let recipeImportScan = { dataUrl: '', name: '', type: '' };
@@ -129,6 +134,7 @@ async function bootApp() {
   const me = await api('/api/me');
   state.user = me.user;
   state.household = me.household;
+  connectRealtime();
   $('#household-name').textContent = me.household?.name || 'Meal Planner';
   syncUserAvatarUI();
   authScreen.classList.add('hidden');
@@ -137,6 +143,55 @@ async function bootApp() {
   requestAnimationFrame(() => updateActiveNavHover());
   await loadBaseData();
   await renderCurrentPage();
+}
+
+
+function connectRealtime() {
+  if (!state.token || typeof window.io !== 'function') return;
+
+  if (state.socket) {
+    state.socket.off('household:update', scheduleRealtimeRefresh);
+    state.socket.disconnect();
+  }
+
+  state.socket = window.io({ auth: { token: state.token } });
+  state.socket.on('household:update', scheduleRealtimeRefresh);
+  state.socket.on('connect_error', () => {
+    // Keep the app usable if realtime is temporarily unavailable.
+  });
+}
+
+function disconnectRealtime() {
+  if (state.realtimeRefreshTimer) {
+    clearTimeout(state.realtimeRefreshTimer);
+    state.realtimeRefreshTimer = null;
+  }
+  if (state.socket) {
+    state.socket.off('household:update', scheduleRealtimeRefresh);
+    state.socket.disconnect();
+    state.socket = null;
+  }
+}
+
+function scheduleRealtimeRefresh() {
+  if (!state.token || state.realtimeRefreshInFlight) return;
+  clearTimeout(state.realtimeRefreshTimer);
+  state.realtimeRefreshTimer = setTimeout(async () => {
+    state.realtimeRefreshInFlight = true;
+    try {
+      const me = await api('/api/me');
+      state.user = me.user;
+      state.household = me.household;
+      $('#household-name').textContent = me.household?.name || 'Meal Planner';
+      syncUserAvatarUI();
+      await loadBaseData();
+      await renderCurrentPage();
+    } catch (error) {
+      console.warn('Realtime refresh failed', error);
+    } finally {
+      state.realtimeRefreshInFlight = false;
+    }
+  }, 180);
 }
 
 async function loadBaseData() {
@@ -186,6 +241,7 @@ function setSession(result, remember = true) {
 }
 
 function logout() {
+  disconnectRealtime();
   state.token = '';
   state.user = null;
   state.household = null;
@@ -198,6 +254,7 @@ function logout() {
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (options.auth !== false && state.token) headers.Authorization = `Bearer ${state.token}`;
+  if (options.auth !== false && state.socket?.id) headers['X-Socket-Id'] = state.socket.id;
 
   const response = await fetch(path, {
     method: options.method || 'GET',
@@ -976,6 +1033,7 @@ function openRecipeScan(recipe) {
 }
 
 function renderRestaurants() {
+  const sortedRestaurants = getSortedRestaurants();
   pageRoot.innerHTML = `
     <section class="grid two">
       <form id="restaurant-form" class="form-card">
@@ -1004,9 +1062,21 @@ function renderRestaurants() {
         <div id="random-result" class="list"></div>
       </article>
     </section>
-    <section class="card">
-      <h3>Restaurant List</h3>
-      <div class="list">${state.restaurants.length ? state.restaurants.map(restaurantItem).join('') : '<div class="empty">Add favorite restaurants to use the random selector.</div>'}</div>
+    <section class="card restaurant-list-section">
+      <div class="section-head restaurant-list-head">
+        <div>
+          <h3>Saved Restaurants</h3>
+          <p class="muted">${state.restaurants.length} saved ${state.restaurants.length === 1 ? 'spot' : 'spots'}</p>
+        </div>
+        <label class="compact-control restaurant-sort-control">Sort
+          <select id="restaurant-sort-select" name="restaurantSort">
+            ${restaurantSortOptions()}
+          </select>
+        </label>
+      </div>
+      <div class="restaurant-card-grid">
+        ${sortedRestaurants.length ? sortedRestaurants.map(restaurantItem).join('') : '<div class="empty">Add favorite restaurants to use the random selector.</div>'}
+      </div>
     </section>
   `;
 
@@ -1018,6 +1088,7 @@ function renderRestaurants() {
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
       await api('/api/restaurants', { method: 'POST', body });
       formElement.reset();
+      state.editingRestaurantId = '';
       await Promise.all([loadRestaurants(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
       renderRestaurants();
     }, 'Restaurant saved.');
@@ -1029,10 +1100,46 @@ function renderRestaurants() {
     const query = new URLSearchParams(Object.fromEntries(Object.entries(values).filter(([, value]) => value))).toString();
     try {
       const result = await api(`/api/restaurants/random${query ? `?${query}` : ''}`);
-      $('#random-result').innerHTML = `<div class="list-item"><strong>${escapeHtml(result.pick.name)}</strong><p class="muted">${escapeHtml(result.pick.cuisine || 'Any cuisine')} • ${result.pick.priceLevel} • ${result.pick.rating || 0}/5</p><p>${escapeHtml((result.pick.tags || []).join(', ') || 'No tags yet')}</p></div>`;
+      $('#random-result').innerHTML = `<div class="list-item"><strong>${escapeHtml(result.pick.name)}</strong><p class="muted">${escapeHtml(result.pick.cuisine || 'Any cuisine')} • ${result.pick.priceLevel} • ${starRating(result.pick.rating || 0)}</p><p>${escapeHtml((result.pick.tags || []).join(', ') || 'No tags yet')}</p></div>`;
     } catch (error) {
       $('#random-result').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
     }
+  });
+
+  $('#restaurant-sort-select')?.addEventListener('change', event => {
+    state.restaurantSort = event.currentTarget.value;
+    localStorage.setItem('mealPlannerRestaurantSort', state.restaurantSort);
+    renderRestaurants();
+  });
+
+  pageRoot.querySelectorAll('[data-edit-restaurant]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.editingRestaurantId = button.dataset.editRestaurant;
+      renderRestaurants();
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-cancel-restaurant-edit]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.editingRestaurantId = '';
+      renderRestaurants();
+    });
+  });
+
+  pageRoot.querySelectorAll('[data-restaurant-edit-form]').forEach(form => {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const formElement = event.currentTarget;
+      const restaurantId = formElement.dataset.restaurantEditForm;
+      await withSaveFeedback(formElement, async () => {
+        const body = formToBody(formElement);
+        body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+        await api(`/api/restaurants/${restaurantId}`, { method: 'PUT', body });
+        state.editingRestaurantId = '';
+        await Promise.all([loadRestaurants(), loadPlanner(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+        renderRestaurants();
+      }, 'Restaurant updated.');
+    });
   });
 
   pageRoot.querySelectorAll('[data-delete-restaurant]').forEach(button => {
@@ -1383,6 +1490,7 @@ async function renderSettings() {
       state.household = result.household;
       $('#household-name').textContent = result.household?.name || 'Meal Planner';
       syncUserAvatarUI();
+      connectRealtime();
       await loadBaseData();
       await renderSettings();
     }, 'Joined household.');
@@ -1434,21 +1542,84 @@ function recipeItem(recipe) {
   `;
 }
 
+function getSortedRestaurants() {
+  const items = [...state.restaurants];
+  const sortMode = state.restaurantSort || 'favorite';
+  const nameCompare = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+
+  return items.sort((a, b) => {
+    if (sortMode === 'name') return nameCompare(a, b);
+    if (sortMode === 'rating') return (Number(b.rating || 0) - Number(a.rating || 0)) || nameCompare(a, b);
+    if (sortMode === 'cuisine') return String(a.cuisine || 'zz').localeCompare(String(b.cuisine || 'zz'), undefined, { sensitivity: 'base' }) || nameCompare(a, b);
+    if (sortMode === 'price') return String(a.priceLevel || '').length - String(b.priceLevel || '').length || nameCompare(a, b);
+    if (sortMode === 'recent') return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
+    return Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
+  });
+}
+
+function restaurantSortOptions() {
+  const options = [
+    ['favorite', 'Favorites first'],
+    ['recent', 'Recently updated'],
+    ['name', 'Name A–Z'],
+    ['rating', 'Highest rated'],
+    ['cuisine', 'Cuisine'],
+    ['price', 'Price']
+  ];
+  return options.map(([value, label]) => option(value, label, state.restaurantSort || 'favorite')).join('');
+}
+
 function restaurantItem(restaurant) {
+  if (String(state.editingRestaurantId) === String(restaurant._id)) return restaurantEditCard(restaurant);
+  const dishes = (restaurant.favoriteDishes || []).join(', ');
+  const tags = (restaurant.tags || []).join(', ');
   return `
-    <div class="list-item">
-      <div class="list-title">
-        <strong>${escapeHtml(restaurant.name)}</strong>
-        <button class="danger small-btn" data-delete-restaurant="${restaurant._id}">Delete</button>
+    <article class="restaurant-card">
+      <div class="restaurant-card-top">
+        <div>
+          <h3>${escapeHtml(restaurant.name)}</h3>
+          <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')}</p>
+        </div>
+        <span class="restaurant-price">${escapeHtml(restaurant.priceLevel || '$$')}</span>
       </div>
       <div class="badge-row">
-        ${restaurant.cuisine ? `<span class="badge accent">${escapeHtml(restaurant.cuisine)}</span>` : ''}
-        <span class="badge">${restaurant.priceLevel}</span>
         ${restaurant.favorite ? '<span class="badge good">favorite</span>' : ''}
+        ${restaurant.cuisine ? `<span class="badge accent">${escapeHtml(restaurant.cuisine)}</span>` : ''}
+        <span class="badge">${starRating(restaurant.rating || 0)}</span>
       </div>
-      <p class="muted">${restaurant.rating || 0}/5 • visited ${restaurant.timesVisited || 0}x</p>
-      ${restaurant.location ? `<p>${escapeHtml(restaurant.location)}</p>` : ''}
-    </div>
+      ${dishes ? `<p><strong>Go-to:</strong> ${escapeHtml(dishes)}</p>` : ''}
+      ${tags ? `<p class="muted">${escapeHtml(tags)}</p>` : ''}
+      ${restaurant.location ? `<p class="restaurant-location">${escapeHtml(restaurant.location)}</p>` : ''}
+      <p class="muted">Visited ${restaurant.timesVisited || 0}x</p>
+      <div class="restaurant-card-actions">
+        <button class="secondary small-btn" type="button" data-edit-restaurant="${restaurant._id}">Edit</button>
+        <button class="danger small-btn" type="button" data-delete-restaurant="${restaurant._id}">Delete</button>
+      </div>
+    </article>
+  `;
+}
+
+function restaurantEditCard(restaurant) {
+  return `
+    <article class="restaurant-card restaurant-card-editing">
+      <form class="restaurant-edit-form" data-restaurant-edit-form="${restaurant._id}">
+        <h3>Edit Restaurant</h3>
+        <div class="form-grid restaurant-edit-grid">
+          <label>Name<input name="name" required value="${escapeAttr(restaurant.name || '')}" /></label>
+          <label>Cuisine<input name="cuisine" value="${escapeAttr(restaurant.cuisine || '')}" /></label>
+          <label>Price<select name="priceLevel">${['$', '$$', '$$$', '$$$$'].map(value => option(value, value, restaurant.priceLevel || '$$')).join('')}</select></label>
+          <label>Rating<select name="rating">${ratingOptions(restaurant.rating || 0)}</select></label>
+          <label class="wide">Location or Link<input name="location" value="${escapeAttr(restaurant.location || '')}" /></label>
+          <label>Favorite Dishes<input name="favoriteDishes" value="${escapeAttr((restaurant.favoriteDishes || []).join(', '))}" /></label>
+          <label>Tags<input name="tags" value="${escapeAttr((restaurant.tags || []).join(', '))}" /></label>
+          <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" ${restaurant.favorite ? 'checked' : ''} /> Favorite</label>
+        </div>
+        <div class="restaurant-card-actions">
+          <button class="primary small-btn" type="submit">Save</button>
+          <button class="ghost small-btn" type="button" data-cancel-restaurant-edit>Cancel</button>
+        </div>
+      </form>
+    </article>
   `;
 }
 
@@ -1499,8 +1670,8 @@ function option(value, label, selected) {
   return `<option value="${escapeAttr(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
 }
 
-function ratingOptions() {
-  return [0, 1, 2, 3, 4, 5].map(value => option(value, `${value}/5`, 0)).join('');
+function ratingOptions(selected = 0) {
+  return [0, 1, 2, 3, 4, 5].map(value => option(value, value ? '★'.repeat(value) : 'No rating', selected)).join('');
 }
 
 function recipeRatingOptions(selected = 3) {
