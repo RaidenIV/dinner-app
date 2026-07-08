@@ -1951,7 +1951,7 @@ function restaurantRandomFilterGroups() {
     <div class="slot-filter-group">
       <span class="slot-filter-label">Rating</span>
       <div class="slot-checkbox-grid compact">
-        ${[1, 2, 3, 4, 5].map(rating => slotCheckbox('ratings', String(rating), starRating(rating))).join('')}
+        ${[1, 2, 3, 4, 5].map(rating => slotCheckbox('ratings', String(rating), '★'.repeat(rating), `${rating} star${rating === 1 ? '' : 's'}`)).join('')}
       </div>
     </div>
     <div class="slot-filter-group single">
@@ -1960,10 +1960,11 @@ function restaurantRandomFilterGroups() {
   `;
 }
 
-function slotCheckbox(name, value, label) {
+function slotCheckbox(name, value, label, ariaLabel = '') {
   const id = `slot-${name}-${slugify(value) || 'option'}`;
+  const labelText = ariaLabel || label;
   return `
-    <label class="slot-check" for="${escapeAttr(id)}">
+    <label class="slot-check" for="${escapeAttr(id)}" aria-label="${escapeAttr(labelText)}">
       <input id="${escapeAttr(id)}" type="checkbox" name="${escapeAttr(name)}" value="${escapeAttr(value)}" />
       <span>${escapeHtml(label)}</span>
     </label>
@@ -1973,11 +1974,9 @@ function slotCheckbox(name, value, label) {
 function slotMachinePlaceholder() {
   return `
     <div class="slot-machine-window" aria-live="polite">
-      <div class="slot-reel"><span>Ready</span></div>
-      <div class="slot-reel"><span>Set</span></div>
-      <div class="slot-reel"><span>Spin</span></div>
+      <div class="slot-reel winner"><span>Tap Spin</span></div>
     </div>
-    <p class="muted slot-machine-hint">Your pick will land here.</p>
+    <p class="muted slot-machine-hint">Only the restaurant name appears on the reel.</p>
   `;
 }
 
@@ -2041,22 +2040,16 @@ function spinRandomRestaurant(form) {
   resultRoot.classList.add('spinning');
   resultRoot.innerHTML = `
     <div class="slot-machine-window spinning" aria-live="polite">
-      <div class="slot-reel"><span>${escapeHtml(reelItems[0]?.name || 'Spin')}</span></div>
-      <div class="slot-reel"><span>${escapeHtml(reelItems[1]?.cuisine || 'Any')}</span></div>
-      <div class="slot-reel"><span>${escapeHtml(reelItems[2]?.priceLevel || '$$')}</span></div>
+      <div class="slot-reel winner"><span>${escapeHtml(reelItems[0]?.name || 'Spin')}</span></div>
     </div>
     <p class="muted slot-machine-hint">Spinning through ${candidates.length} matching ${candidates.length === 1 ? 'spot' : 'spots'}...</p>
   `;
 
   const interval = window.setInterval(() => {
     tick += 1;
-    const reels = resultRoot.querySelectorAll('.slot-reel span');
-    reels.forEach((reel, index) => {
-      const restaurant = reelItems[(tick + index) % reelItems.length];
-      if (!restaurant) return;
-      const values = [restaurant.name, restaurant.cuisine || 'Any cuisine', restaurant.priceLevel || '$$'];
-      reel.textContent = values[index] || restaurant.name;
-    });
+    const reel = resultRoot.querySelector('.slot-reel span');
+    const restaurant = reelItems[tick % reelItems.length];
+    if (reel && restaurant) reel.textContent = restaurant.name || 'Restaurant';
   }, 72);
 
   window.setTimeout(() => {
@@ -2074,8 +2067,6 @@ function renderSlotMachinePick(restaurant, poolSize) {
     <div class="slot-machine-pick">
       <div class="slot-machine-window settled">
         <div class="slot-reel winner"><span>${escapeHtml(restaurant.name || 'Restaurant')}</span></div>
-        <div class="slot-reel"><span>${escapeHtml(restaurant.cuisine || 'Any cuisine')}</span></div>
-        <div class="slot-reel"><span>${escapeHtml(restaurant.priceLevel || '$$')}</span></div>
       </div>
       <div class="slot-pick-details">
         <div>
