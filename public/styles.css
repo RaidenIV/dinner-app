@@ -347,9 +347,7 @@ textarea:focus {
   width: 23px;
   height: 23px;
   flex: 0 0 auto;
-  background: var(--brand);
-  -webkit-mask: url('/assets/home.svg') center / contain no-repeat;
-  mask: url('/assets/home.svg') center / contain no-repeat;
+  background: url('/favicon.png') center / contain no-repeat;
 }
 
 .topnav-sub {
