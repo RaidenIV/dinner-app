@@ -537,9 +537,11 @@ function renderPlanner() {
 }
 
 function plannerDayCard(date, plans, fullCalendar = false) {
-  const isToday = date === dateISO(new Date());
+  const todayIso = dateISO(new Date());
+  const isToday = date === todayIso;
+  const isPast = date < todayIso;
   return `
-    <article class="calendar-day ${fullCalendar ? 'full-calendar-day' : ''} ${isToday ? 'today' : ''}" data-date="${date}">
+    <article class="calendar-day ${fullCalendar ? 'full-calendar-day' : ''} ${isToday ? 'today' : ''} ${isPast ? 'past-day' : ''}" data-date="${date}">
       <header class="calendar-day-header">
         <div>
           <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
@@ -803,7 +805,6 @@ function calendarMealForm(date, plan = null) {
 function customSideRow(side = {}) {
   return `
     <div class="custom-side-row" data-custom-side-row>
-      <input name="sideQuantity" placeholder="Qty" value="${escapeAttr(side.quantity || '')}" aria-label="Side quantity" />
       <input name="sideName" placeholder="Side" value="${escapeAttr(side.name || '')}" aria-label="Side name" />
       <button class="small-btn custom-side-remove" type="button" data-remove-custom-side aria-label="Remove side">×</button>
     </div>
@@ -811,10 +812,9 @@ function customSideRow(side = {}) {
 }
 
 function readCustomSides(form) {
-  const quantities = [...form.querySelectorAll('[name="sideQuantity"]')].map(input => input.value.trim());
   const names = [...form.querySelectorAll('[name="sideName"]')].map(input => input.value.trim());
   return names
-    .map((name, index) => ({ name, quantity: quantities[index] || '' }))
+    .map(name => ({ name, quantity: '' }))
     .filter(side => side.name);
 }
 
@@ -828,7 +828,7 @@ function customMealDetailsMarkup(plan) {
   const details = [];
   if (plan.customProtein) details.push(`Protein: ${escapeHtml(plan.customProtein)}`);
   if (Array.isArray(plan.customSides) && plan.customSides.length) {
-    const sides = plan.customSides.map(side => `${side.quantity ? `${escapeHtml(side.quantity)} ` : ''}${escapeHtml(side.name)}`).join(', ');
+    const sides = plan.customSides.map(side => escapeHtml(side.name)).join(', ');
     details.push(`Sides: ${sides}`);
   }
   return details.length ? `<p class="custom-meal-details">${details.join(' · ')}</p>` : '';
