@@ -1,1089 +1,3824 @@
-import 'dotenv/config';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import crypto from 'node:crypto';
-import { createServer } from 'node:http';
-import express from 'express';
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
-import morgan from 'morgan';
-import { Server as SocketIOServer } from 'socket.io';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-const httpServer = createServer(app);
-const io = new SocketIOServer(httpServer, {
-  cors: { origin: true }
-});
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET;
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!JWT_SECRET) {
-  throw new Error('Missing JWT_SECRET environment variable.');
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-if (!MONGODB_URI) {
-  throw new Error('Missing MONGODB_URI environment variable.');
+:root {
+  --brand: #4A13F0;
+  --brand-hover: #2c00cf;
+  --brand-light: rgba(74, 19, 240, 0.12);
+  --brand-border: rgba(74, 19, 240, 0.22);
+  --white: #ffffff;
+  --green: #1ef012;
+  --dark: #111111;
+  --text-primary: #111111;
+  --text-secondary: #555555;
+  --text-tertiary: #aaaaaa;
+  --border: #e8e8ee;
+  --border-mid: #e0e0e0;
+  --surface: #f4f4f8;
+  --bg: #f0f0f6;
+  --danger: #e53e3e;
+  --warning: #f4a700;
+  --star: #f4a700;
+  --radius: 16px;
+  --modal-radius: 18px;
+  --line: var(--border);
+  --panel: var(--white);
+  --panel-2: var(--surface);
+  --panel-3: var(--brand-light);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --accent: var(--brand);
+  --accent-2: var(--brand-hover);
+  --success: var(--green);
+  color-scheme: light;
 }
 
-app.use(helmet({
-  contentSecurityPolicy: false
-}));
-app.use(cors());
-app.use(compression());
-app.use(express.json({ limit: '4mb' }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(express.static(path.join(__dirname, 'public')));
-
-mongoose.set('strictQuery', true);
-await mongoose.connect(MONGODB_URI);
-
-const objectId = mongoose.Schema.Types.ObjectId;
-
-const householdSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true, maxlength: 80 },
-  inviteCode: { type: String, required: true, unique: true, index: true },
-  createdBy: { type: objectId, ref: 'User' }
-}, { timestamps: true });
-
-const householdInviteSchema = new mongoose.Schema({
-  householdId: { type: objectId, ref: 'Household', required: true, index: true },
-  email: { type: String, required: true, lowercase: true, trim: true, index: true },
-  inviteCode: { type: String, required: true, trim: true },
-  invitedBy: { type: objectId, ref: 'User' },
-  status: { type: String, enum: ['pending', 'accepted'], default: 'pending' },
-  lastSentAt: { type: Date },
-  acceptedAt: { type: Date }
-}, { timestamps: true });
-householdInviteSchema.index({ householdId: 1, email: 1 }, { unique: true });
-
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true, maxlength: 80 },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-  passwordHash: { type: String, required: true },
-  profilePic: { type: String, default: '', maxlength: 1600000 },
-  householdId: { type: objectId, ref: 'Household', required: true },
-  role: { type: String, enum: ['owner', 'member'], default: 'member' }
-}, { timestamps: true });
-
-const ingredientSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  quantity: { type: String, default: '', trim: true },
-  unit: { type: String, default: '', trim: true },
-  category: { type: String, default: 'Other', trim: true }
-}, { _id: false });
-
-const recipeSchema = new mongoose.Schema({
-  householdId: { type: objectId, ref: 'Household', required: true, index: true },
-  name: { type: String, required: true, trim: true, maxlength: 120 },
-  mealTypes: [{ type: String, enum: ['breakfast', 'lunch', 'dinner', 'snack', 'dessert'] }],
-  cuisine: { type: String, default: '', trim: true, index: true },
-  ingredients: [ingredientSchema],
-  instructions: { type: String, default: '', trim: true },
-  prepTime: { type: Number, default: 0, min: 0 },
-  cookTime: { type: Number, default: 0, min: 0 },
-  difficulty: { type: String, enum: ['easy', 'medium', 'hard'], default: 'easy' },
-  tags: [{ type: String, trim: true }],
-  rating: { type: Number, min: 0, max: 5, default: 0 },
-  favorite: { type: Boolean, default: false },
-  originalScan: { type: String, default: '', maxlength: 1600000 },
-  originalScanName: { type: String, default: '', trim: true, maxlength: 160 },
-  importSource: { type: String, enum: ['', 'printed'], default: '' },
-  importNotes: { type: String, default: '', trim: true, maxlength: 500 },
-  timesCooked: { type: Number, default: 0, min: 0 },
-  lastCookedAt: { type: Date },
-  createdBy: { type: objectId, ref: 'User' }
-}, { timestamps: true });
-
-const restaurantSchema = new mongoose.Schema({
-  householdId: { type: objectId, ref: 'Household', required: true, index: true },
-  name: { type: String, required: true, trim: true, maxlength: 120 },
-  cuisine: { type: String, default: '', trim: true, index: true },
-  priceLevel: { type: String, enum: ['$', '$$', '$$$', '$$$$'], default: '$$' },
-  location: { type: String, default: '', trim: true },
-  favoriteDishes: [{ type: String, trim: true }],
-  tags: [{ type: String, trim: true }],
-  rating: { type: Number, min: 0, max: 5, default: 0 },
-  favorite: { type: Boolean, default: false },
-  timesVisited: { type: Number, default: 0, min: 0 },
-  lastVisitedAt: { type: Date },
-  createdBy: { type: objectId, ref: 'User' }
-}, { timestamps: true });
-
-const mealPlanSchema = new mongoose.Schema({
-  householdId: { type: objectId, ref: 'Household', required: true, index: true },
-  date: { type: String, required: true, index: true },
-  mealType: { type: String, enum: ['breakfast', 'lunch', 'dinner'], required: true },
-  time: { type: String, default: '', trim: true },
-  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom'], default: 'custom' },
-  sourceId: { type: objectId, default: null },
-  customName: { type: String, default: '', trim: true },
-  status: { type: String, enum: ['planned', 'eaten', 'skipped'], default: 'planned' },
-  notes: { type: String, default: '', trim: true },
-  updatedBy: { type: objectId, ref: 'User' }
-}, { timestamps: true });
-mealPlanSchema.index({ householdId: 1, date: 1, mealType: 1 }, { unique: true });
-
-const groceryItemSchema = new mongoose.Schema({
-  householdId: { type: objectId, ref: 'Household', required: true, index: true },
-  name: { type: String, required: true, trim: true, maxlength: 100 },
-  quantity: { type: String, default: '', trim: true },
-  unit: { type: String, default: '', trim: true },
-  category: { type: String, default: 'Other', trim: true },
-  checked: { type: Boolean, default: false },
-  addedBy: { type: objectId, ref: 'User' },
-  recipeId: { type: objectId, ref: 'Recipe' }
-}, { timestamps: true });
-
-const mealHistorySchema = new mongoose.Schema({
-  householdId: { type: objectId, ref: 'Household', required: true, index: true },
-  date: { type: String, required: true, index: true },
-  mealType: { type: String, enum: ['breakfast', 'lunch', 'dinner'], required: true },
-  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom'], default: 'custom' },
-  sourceId: { type: objectId, default: null },
-  name: { type: String, required: true, trim: true },
-  cuisine: { type: String, default: '', trim: true },
-  rating: { type: Number, min: 0, max: 5, default: 0 },
-  notes: { type: String, default: '', trim: true },
-  cost: { type: Number, min: 0, default: 0 },
-  createdBy: { type: objectId, ref: 'User' }
-}, { timestamps: true });
-mealHistorySchema.index({ householdId: 1, date: 1, mealType: 1, sourceType: 1, sourceId: 1, name: 1 });
-
-const Household = mongoose.model('Household', householdSchema);
-const HouseholdInvite = mongoose.model('HouseholdInvite', householdInviteSchema);
-const User = mongoose.model('User', userSchema);
-const Recipe = mongoose.model('Recipe', recipeSchema);
-const Restaurant = mongoose.model('Restaurant', restaurantSchema);
-const MealPlan = mongoose.model('MealPlan', mealPlanSchema);
-const GroceryItem = mongoose.model('GroceryItem', groceryItemSchema);
-const MealHistory = mongoose.model('MealHistory', mealHistorySchema);
-
-io.use(async (socket, next) => {
-  try {
-    const token = socket.handshake.auth?.token || '';
-    if (!token) return next(new Error('Missing auth token.'));
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(payload.userId).lean();
-    if (!user) return next(new Error('Invalid auth token.'));
-    socket.userId = user._id.toString();
-    socket.householdId = user.householdId.toString();
-    return next();
-  } catch (error) {
-    return next(new Error('Invalid or expired auth token.'));
-  }
-});
-
-io.on('connection', socket => {
-  if (socket.householdId) socket.join(`household:${socket.householdId}`);
-});
-
-function broadcastHouseholdUpdate(req, type, details = {}) {
-  const householdId = req.householdId?.toString?.() || String(req.householdId || '');
-  if (!householdId) return;
-  const senderSocketId = req.get?.('x-socket-id');
-  const payload = {
-    type,
-    householdId,
-    actorId: req.user?._id?.toString?.() || String(req.user?._id || ''),
-    at: new Date().toISOString(),
-    ...details
-  };
-  const room = `household:${householdId}`;
-  if (senderSocketId) {
-    io.to(room).except(senderSocketId).emit('household:update', payload);
-    return;
-  }
-  io.to(room).emit('household:update', payload);
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-function generateInviteCode() {
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
-function normalizeEmail(value) {
-  return String(value || '').toLowerCase().trim();
+button {
+  border: 0;
+  cursor: pointer;
 }
 
-function isValidEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+body,
+body * {
+  cursor: default;
 }
 
-function publicInvite(invite) {
-  return {
-    id: invite._id,
-    email: invite.email,
-    inviteCode: invite.inviteCode,
-    status: invite.status,
-    lastSentAt: invite.lastSentAt,
-    acceptedAt: invite.acceptedAt,
-    createdAt: invite.createdAt
-  };
+button,
+a,
+[role="button"],
+.nav-item,
+.calendar-add-btn,
+.restaurant-favorite-btn,
+.restaurant-kebab-btn,
+.meal-kebab-btn,
+.restaurant-action-menu button,
+.meal-action-menu button,
+input[type="checkbox"],
+input[type="radio"],
+select {
+  cursor: pointer;
 }
 
-function tokenFor(user) {
-  return jwt.sign({ userId: user._id.toString() }, JWT_SECRET, { expiresIn: '30d' });
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+[contenteditable="true"] {
+  cursor: text;
 }
 
-function publicUser(user) {
-  return {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    profilePic: user.profilePic || '',
-    householdId: user.householdId,
-    role: user.role
-  };
+.hidden {
+  display: none !important;
 }
 
-function normalizeTags(value) {
-  if (Array.isArray(value)) return value.map(String).map(v => v.trim()).filter(Boolean);
-  return String(value || '')
-    .split(',')
-    .map(v => v.trim())
-    .filter(Boolean);
+/* Auth */
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
 }
 
-function parseIngredientLines(textOrArray) {
-  if (Array.isArray(textOrArray)) {
-    return textOrArray
-      .map(item => ({
-        name: String(item.name || '').trim(),
-        quantity: String(item.quantity || '').trim(),
-        unit: String(item.unit || '').trim(),
-        category: String(item.category || 'Other').trim() || 'Other'
-      }))
-      .filter(item => item.name);
-  }
-
-  return String(textOrArray || '')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => {
-      const parts = line.split('|').map(part => part.trim());
-      if (parts.length >= 4) {
-        return { quantity: parts[0], unit: parts[1], name: parts[2], category: parts[3] || 'Other' };
-      }
-      if (parts.length === 3) {
-        return { quantity: parts[0], unit: parts[1], name: parts[2], category: 'Other' };
-      }
-      return { quantity: '', unit: '', name: line, category: 'Other' };
-    })
-    .filter(item => item.name);
+.auth-card {
+  width: min(440px, 100%);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--modal-radius);
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
 }
 
-function getDateRange(weekStart, days = 7) {
-  const start = new Date(`${weekStart}T00:00:00.000Z`);
-  if (Number.isNaN(start.getTime())) {
-    throw new Error('Invalid weekStart date. Use YYYY-MM-DD.');
-  }
-
-  const requestedDays = Number.parseInt(days, 10) || 7;
-  const safeDays = Math.min(42, Math.max(1, requestedDays));
-  return Array.from({ length: safeDays }, (_, i) => {
-    const date = new Date(start);
-    date.setUTCDate(start.getUTCDate() + i);
-    return date.toISOString().slice(0, 10);
-  });
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--brand);
+  color: var(--white);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.06em;
 }
 
-function startOfCurrentWeek() {
-  const now = new Date();
-  const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  const day = date.getUTCDay();
-  date.setUTCDate(date.getUTCDate() - day);
-  return date.toISOString().slice(0, 10);
+.auth-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
 }
 
-function escapeRegex(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+.auth-card h1 {
+  margin: 0;
+  font-size: clamp(2.3rem, 8vw, 4.2rem);
+  line-height: 0.92;
+  letter-spacing: -0.08em;
+  color: var(--brand);
 }
 
-async function authenticate(req, res, next) {
-  try {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'Missing auth token.' });
+.auth-title-row .homeplate-logo-icon {
+  width: clamp(28px, 7vw, 44px);
+  height: clamp(28px, 7vw, 44px);
+}
 
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(payload.userId).lean();
-    if (!user) return res.status(401).json({ error: 'Invalid auth token.' });
+.muted,
+.optional {
+  color: var(--text-secondary);
+}
 
-    req.user = user;
-    req.householdId = user.householdId;
-    next();
-  } catch (error) {
-    res.status(401).json({ error: 'Invalid or expired auth token.' });
+.optional {
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 22px 0 16px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--surface);
+}
+
+.tab {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  transition: background 0.14s, color 0.14s;
+}
+
+.tab.active {
+  background: var(--brand);
+  color: var(--white);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.remember-line {
+  margin-top: -2px;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--text-primary);
+  padding: 10px 11px;
+  outline: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+select {
+  min-height: 40px;
+  padding-right: 30px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2' stroke-linecap='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-border);
+}
+
+.duration-clock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--white);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.duration-clock:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-border);
+}
+
+.duration-clock input {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 2px;
+  background: transparent;
+  box-shadow: none !important;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.duration-separator {
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.error-text {
+  min-height: 20px;
+  margin-top: 10px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* App shell */
+.app-shell {
+  min-height: 100vh;
+}
+
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 24px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+}
+
+.topnav-brand {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.topnav-logo-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  color: var(--brand);
+}
+
+.topnav-logo {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: var(--brand);
+  line-height: 1;
+}
+
+.homeplate-logo-icon {
+  display: inline-block;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  background: var(--brand);
+  -webkit-mask: url('/assets/home.svg') center / contain no-repeat;
+  mask: url('/assets/home.svg') center / contain no-repeat;
+}
+
+.topnav-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.topnav-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: relative;
+  --nav-hover-x: 0px;
+  --nav-hover-y: 0px;
+  --nav-hover-w: 0px;
+  --nav-hover-h: 0px;
+  --nav-hover-opacity: 0;
+}
+
+.topnav-nav::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--nav-hover-w);
+  height: var(--nav-hover-h);
+  transform: translate3d(var(--nav-hover-x), var(--nav-hover-y), 0);
+  background: var(--brand-light);
+  border-radius: 10px;
+  pointer-events: none;
+  opacity: var(--nav-hover-opacity);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), width 0.34s cubic-bezier(0.16, 1, 0.3, 1), height 0.34s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
+  z-index: 0;
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 16px;
+  min-height: 46px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  position: relative;
+  z-index: 1;
+  transition: color 0.2s;
+}
+
+.nav-item .ti,
+.nav-item .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.nav-item:hover,
+.nav-item.active {
+  color: var(--brand);
+}
+
+.topnav-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.developer-footer {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.developer-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 6px 13px;
+  border-radius: 9999px;
+  background: var(--brand);
+  border: 1px solid var(--brand-border);
+}
+
+.developer-logo {
+  display: block;
+  width: 88px;
+  max-width: 24vw;
+  height: auto;
+}
+
+.user-pill {
+  min-height: 36px;
+  padding: 3px 10px 3px 4px;
+  border-radius: 9999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  transition: transform 0.14s, background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.user-pill:hover,
+.user-pill.active {
+  transform: translateY(-1px);
+  background: var(--brand-light);
+  border-color: var(--brand-border);
+  color: var(--brand);
+}
+
+.user-pill-name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-panel {
+  width: min(1280px, 100%);
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.app-shell[data-page="planner"] .content-panel {
+  width: min(1600px, 100%);
+}
+
+.topbar,
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toolbar-left,
+.toolbar-right,
+.topbar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-left {
+  gap: 24px;
+}
+
+.toolbar-right,
+.topbar-actions {
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.toolbar-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--brand);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.toolbar-title,
+.topbar h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 3vw, 2.25rem);
+  font-weight: 900;
+  color: var(--text-primary);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.banner-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 24px;
+  background: var(--brand);
+  border: none;
+  border-radius: 14px;
+  width: fit-content;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.banner-tagline {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--white);
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.toast {
+  position: sticky;
+  top: 78px;
+  z-index: 80;
+  max-height: 0;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: #edffeb;
+  border: 1px solid rgba(30, 240, 18, 0.36);
+  color: #155c10;
+  font-size: 13px;
+  font-weight: 800;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  overflow: hidden;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    max-height 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    padding 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.22s ease,
+    background 0.22s ease,
+    color 0.22s ease;
+}
+
+.toast.show {
+  max-height: 72px;
+  padding: 11px 14px;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.page-root {
+  display: grid;
+  gap: 13px;
+}
+
+/* Buttons */
+.primary,
+.secondary,
+.ghost,
+.danger,
+.small-btn {
+  min-height: 32px;
+  padding: 0 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: transform 0.14s, background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.primary {
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  color: var(--white);
+}
+
+.primary:hover {
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
+}
+
+.secondary,
+.ghost,
+.small-btn {
+  background: var(--white);
+  border: 0.5px solid var(--border-mid);
+  color: var(--text-secondary);
+}
+
+.secondary:hover,
+.ghost:hover,
+.small-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-light);
+}
+
+.logout-btn:hover {
+  border-color: rgba(229, 62, 62, 0.44);
+  color: var(--danger);
+  background: rgba(229, 62, 62, 0.1);
+}
+
+.settings-logout-card .logout-btn {
+  width: fit-content;
+  margin-top: 4px;
+}
+
+
+.settings-export-card .secondary {
+  width: fit-content;
+  margin-top: 4px;
+}
+
+.danger {
+  background: rgba(229, 62, 62, 0.08);
+  border: 0.5px solid rgba(229, 62, 62, 0.22);
+  color: var(--danger);
+}
+
+.danger:hover {
+  background: rgba(229, 62, 62, 0.13);
+  border-color: rgba(229, 62, 62, 0.36);
+}
+
+.primary:hover,
+.secondary:hover,
+.ghost:hover,
+.danger:hover,
+.small-btn:hover {
+  transform: translateY(-1px);
+}
+
+.full {
+  width: 100%;
+}
+
+/* Layout and cards */
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.card,
+.form-card,
+.slot,
+.stat-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: none;
+  transition: transform 0.16s, box-shadow 0.16s, border-color 0.16s;
+}
+
+.card,
+.form-card,
+.stat-card {
+  padding: 16px;
+}
+
+.card h3,
+.form-card h3,
+.stat-card h3,
+.slot h4,
+.list-item h3 {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.slot h4 {
+  text-transform: capitalize;
+  color: var(--brand);
+}
+
+.card p,
+.list-item p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kpi {
+  color: var(--brand);
+  font-size: clamp(2rem, 4vw, 3.15rem);
+  font-weight: 900;
+  letter-spacing: -0.08em;
+  line-height: 0.98;
+}
+
+.kpi small {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  font-weight: 700;
+}
+
+.invite-code {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.action-row,
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+}
+
+.list-item {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.list-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.list-title strong,
+.list-item strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.badge-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.badge.good {
+  background: var(--green);
+  border-color: var(--green);
+  color: #000;
+}
+
+.badge.warn {
+  background: rgba(244, 167, 0, 0.14);
+  border-color: rgba(244, 167, 0, 0.3);
+  color: #8d6200;
+}
+
+.badge.accent {
+  background: var(--brand-light);
+  border-color: var(--brand-border);
+  color: var(--brand);
+}
+
+/* Planner */
+.planner-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  overflow-x: visible;
+}
+
+.calendar-day {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  aspect-ratio: 4 / 5;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  transition: transform 0.16s, box-shadow 0.16s, border-color 0.16s;
+}
+
+.calendar-day:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.07);
+  border-color: #d8d8e8;
+}
+
+.calendar-day-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-day-name,
+.calendar-day-date {
+  display: block;
+}
+
+.calendar-day-name {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.calendar-day-date {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.calendar-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  background: var(--brand);
+  color: var(--white);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 0.14s, background 0.14s;
+}
+
+.calendar-add-btn:hover {
+  transform: translateY(-1px);
+  background: var(--brand-hover);
+}
+
+.calendar-meals {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.calendar-meal {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.calendar-meal-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendar-meal-main {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.calendar-meal-main strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.calendar-meal-main p {
+  margin: 0;
+}
+
+.calendar-meal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.meal-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.meal-kebab-btn {
+  width: 28px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.14s, color 0.14s;
+}
+
+.meal-kebab-btn .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.meal-kebab-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+.meal-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 24;
+  min-width: 116px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(0,0,0,0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.14s, visibility 0.14s;
+}
+
+.meal-action-menu.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.meal-action-menu button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.meal-action-menu button:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+.meal-action-menu .danger-menu-item {
+  color: var(--danger);
+}
+
+.meal-action-menu .danger-menu-item:hover {
+  background: rgba(229, 62, 62, 0.1);
+  color: var(--danger);
+}
+
+.calendar-form-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-meal-form {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--brand-border);
+  border-radius: 14px;
+  background: var(--brand-light);
+}
+
+.calendar-meal-form textarea {
+  min-height: 58px;
+}
+
+.empty.compact {
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 12px;
+}
+
+.slot {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.slot-form {
+  display: grid;
+  gap: 8px;
+}
+
+.slot-form textarea {
+  min-height: 58px;
+}
+
+/* Settings */
+.accent-picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.accent-swatch {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--white);
+  transition: transform 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+
+.accent-swatch::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--swatch);
+  border: 2px solid var(--white);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.accent-swatch span {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.accent-swatch:hover,
+.accent-swatch.active {
+  transform: translateY(-1px);
+  border-color: var(--swatch);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--swatch) 16%, transparent);
+}
+
+.accent-swatch.active span {
+  color: var(--text-primary);
+}
+
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  background: var(--brand-light);
+  border: 1px solid var(--brand-border);
+  color: var(--brand);
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.user-avatar--nav {
+  width: 28px;
+  height: 28px;
+}
+
+.user-avatar--profile {
+  width: 74px;
+  height: 74px;
+}
+
+.user-avatar--member {
+  width: 38px;
+  height: 38px;
+}
+
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-avatar-fallback {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.user-avatar--profile .user-avatar-fallback {
+  font-size: 22px;
+}
+
+.profile-settings-row,
+.member-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-settings-row {
+  margin-top: 14px;
+}
+
+.profile-settings-copy,
+.member-identity > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.member-list-item {
+  padding: 10px;
+}
+
+/* Grocery */
+.grocery-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.grocery-item input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+}
+
+.grocery-item.checked .grocery-name {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.checkbox-line input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+}
+
+/* Stats */
+.chart-row {
+  display: grid;
+  gap: 10px;
+}
+
+.bar {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+}
+
+.bar span {
+  display: block;
+  height: 100%;
+  width: var(--w, 0%);
+  background: var(--brand);
+}
+
+.empty {
+  padding: 16px;
+  border: 1px dashed var(--border-mid);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Legacy aliases retained for older markup */
+.sidebar {
+  display: contents;
+}
+
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-logo span {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--brand);
+  color: var(--white);
+  font-weight: 900;
+}
+
+/* Responsive */
+@media (max-width: 1180px) {
+  .topnav {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+
+  .topnav-brand {
+    align-items: center;
+    text-align: center;
+  }
+
+  .topnav-right {
+    justify-content: center;
+  }
+
+  .topnav-nav {
+    width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .topnav-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    padding: 6px 18px;
+    flex-shrink: 0;
+  }
+
+  .topbar,
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toolbar-left,
+  .toolbar-right,
+  .topbar-actions {
+    justify-content: space-between;
+  }
+
+  .banner-area {
+    width: 100%;
+  }
+
+  .grid.three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell[data-page="planner"] .content-panel {
+    width: min(1500px, 100%);
+  }
+
+  .calendar-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 
-async function getSourceNameAndCuisine(sourceType, sourceId, customName, householdId) {
-  if (sourceType === 'recipe' && sourceId) {
-    const recipe = await Recipe.findOne({ _id: sourceId, householdId }).lean();
-    return { name: recipe?.name || customName || 'Recipe', cuisine: recipe?.cuisine || '' };
+
+@media (max-width: 780px) {
+  .content-panel {
+    padding: 12px 12px 28px;
+    gap: 10px;
   }
-  if (sourceType === 'restaurant' && sourceId) {
-    const restaurant = await Restaurant.findOne({ _id: sourceId, householdId }).lean();
-    return { name: restaurant?.name || customName || 'Restaurant', cuisine: restaurant?.cuisine || '' };
+
+  .auth-card {
+    padding: 20px;
   }
-  return { name: customName || 'Custom meal', cuisine: '' };
+
+  .topnav-logo {
+    font-size: 24px;
+  }
+
+  .topnav-sub {
+    font-size: 10px;
+  }
+
+  .nav-item {
+    padding: 6px 14px;
+    font-size: 9px;
+  }
+
+  .grid.two,
+  .grid.three {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-left,
+  .toolbar-right,
+  .topbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .primary,
+  .secondary,
+  .ghost,
+  .danger,
+  .small-btn {
+    width: 100%;
+  }
+
+  .banner-tagline {
+    white-space: normal;
+  }
+
+  .list-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .grocery-item {
+    grid-template-columns: auto 1fr;
+  }
+
+  .grocery-item .small-btn {
+    grid-column: 1 / -1;
+  }
+
+  .calendar-grid {
+    grid-template-columns: 1fr;
+    overflow-x: visible;
+  }
+
+  .calendar-day {
+    min-width: 0;
+    min-height: auto;
+  }
+
+  .accent-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-settings-row {
+    align-items: flex-start;
+  }
+
+  .profile-actions {
+    flex-direction: column;
+  }
 }
 
-async function upsertHistoryFromPlan(plan, userId) {
-  if (plan.status !== 'eaten') return;
 
-  const { name, cuisine } = await getSourceNameAndCuisine(
-    plan.sourceType,
-    plan.sourceId,
-    plan.customName,
-    plan.householdId
-  );
 
-  await MealHistory.findOneAndUpdate(
-    {
-      householdId: plan.householdId,
-      date: plan.date,
-      mealType: plan.mealType,
-      sourceType: plan.sourceType,
-      sourceId: plan.sourceId || null,
-      name
-    },
-    {
-      householdId: plan.householdId,
-      date: plan.date,
-      mealType: plan.mealType,
-      sourceType: plan.sourceType,
-      sourceId: plan.sourceId || null,
-      name,
-      cuisine,
-      notes: plan.notes || '',
-      createdBy: userId
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+/* Theme, spacing, modal, and expansion updates */
+:root[data-theme="dark"] {
+  --brand-light: rgba(74, 19, 240, 0.16);
+  --brand-border: rgba(74, 19, 240, 0.28);
+  --white: #171922;
+  --dark: #f6f7fb;
+  --text-primary: #f6f7fb;
+  --text-secondary: #b9c0cd;
+  --text-tertiary: #7f8898;
+  --border: #282c38;
+  --border-mid: #343948;
+  --surface: #101219;
+  --bg: #0b0d12;
+  --line: var(--border);
+  --panel: var(--white);
+  --panel-2: var(--surface);
+  --panel-3: var(--brand-light);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  color-scheme: dark;
+}
 
-  if (plan.sourceType === 'recipe' && plan.sourceId) {
-    await Recipe.updateOne(
-      { _id: plan.sourceId, householdId: plan.householdId },
-      { $inc: { timesCooked: 1 }, $set: { lastCookedAt: new Date(`${plan.date}T12:00:00.000Z`) } }
-    );
+:root[data-theme="dark"] .primary,
+:root[data-theme="dark"] .tab.active,
+:root[data-theme="dark"] .brand-mark,
+:root[data-theme="dark"] .banner-tagline,
+:root[data-theme="dark"] .calendar-add-btn {
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .toast {
+  background: rgba(30, 240, 18, 0.12);
+  border-color: rgba(30, 240, 18, 0.28);
+  color: #baffb5;
+}
+
+:root[data-theme="dark"] .calendar-day:hover {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  border-color: #3b4252;
+}
+
+:root[data-theme="dark"] .accent-swatch::before {
+  border-color: #0b0d12;
+}
+
+.form-card > .form-grid + .primary.full,
+.form-card > .form-grid + button.primary.full {
+  margin-top: 12px;
+}
+
+.restaurant-favorite {
+  padding-bottom: 4px;
+}
+
+.theme-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  width: min(172px, 100%);
+  margin-top: 12px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--surface);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.theme-toggle::before {
+  content: '';
+  position: absolute;
+  inset: 3px auto 3px 3px;
+  width: calc(50% - 3px);
+  border-radius: 9999px;
+  background: var(--brand);
+  box-shadow: 0 6px 14px var(--brand-border);
+  transform: translateX(0);
+  transition:
+    transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.theme-toggle[data-theme-toggle-state="dark"]::before {
+  transform: translateX(100%);
+}
+
+.theme-option {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  position: relative;
+  z-index: 1;
+  transition: color 0.22s ease;
+}
+
+.theme-option.active {
+  color: #ffffff;
+}
+
+.star-rating {
+  color: var(--star);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.time-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 82px 16px 24px;
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.time-modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.time-modal-overlay.closing {
+  opacity: 0;
+}
+
+.time-modal-card {
+  width: min(430px, 100%);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--modal-radius);
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.14);
+  transform: translateY(-10px) scale(0.98);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
+}
+
+.time-modal-overlay.open .time-modal-card {
+  transform: translateY(0) scale(1);
+}
+
+.time-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.time-modal-header h3 {
+  margin: 0 0 3px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.modal-close-btn {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.time-modal-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.time-modal-overlay.open .time-modal-body {
+  grid-template-rows: 1fr;
+}
+
+.time-modal-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.compact-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.source-field-expander {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.source-field-expander.open {
+  grid-template-rows: 1fr;
+}
+
+.source-field-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-meal-form {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.calendar-meal-form *,
+.time-modal-card * {
+  min-width: 0;
+}
+
+.calendar-meal-form label,
+.calendar-meal-form input,
+.calendar-meal-form select,
+.calendar-meal-form textarea {
+  max-width: 100%;
+}
+
+.calendar-meal-form input[type="time"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 780px) {
+  .time-modal-overlay {
+    align-items: flex-end;
+    padding: 16px 12px;
   }
 
-  if (plan.sourceType === 'restaurant' && plan.sourceId) {
-    await Restaurant.updateOne(
-      { _id: plan.sourceId, householdId: plan.householdId },
-      { $inc: { timesVisited: 1 }, $set: { lastVisitedAt: new Date(`${plan.date}T12:00:00.000Z`) } }
-    );
+  .time-modal-card {
+    width: 100%;
+    max-width: calc(100vw - 24px);
+  }
+
+  .calendar-meal-form input[type="time"] {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .compact-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 
-app.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'meal-planner', time: new Date().toISOString() });
-});
 
-app.post('/api/auth/signup', async (req, res) => {
-  try {
-    const { name, email, password, householdName, inviteCode } = req.body;
-    const normalizedEmail = normalizeEmail(email);
-    if (!name || !normalizedEmail || !password) {
-      return res.status(400).json({ error: 'Name, email, and password are required.' });
-    }
-    if (!isValidEmail(normalizedEmail)) {
-      return res.status(400).json({ error: 'Enter a valid email address.' });
-    }
-    if (String(password).length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-    }
-
-    const existing = await User.findOne({ email: normalizedEmail });
-    if (existing) return res.status(409).json({ error: 'An account with that email already exists.' });
-
-    let household;
-    let role = 'member';
-    if (inviteCode) {
-      household = await Household.findOne({ inviteCode: String(inviteCode).trim().toUpperCase() });
-      if (!household) return res.status(404).json({ error: 'Invite code was not found.' });
-    } else {
-      household = await Household.create({
-        name: householdName || `${name}'s Household`,
-        inviteCode: generateInviteCode()
-      });
-      role = 'owner';
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = await User.create({
-      name,
-      email: normalizedEmail,
-      passwordHash,
-      householdId: household._id,
-      role
-    });
-
-    if (!household.createdBy) {
-      household.createdBy = user._id;
-      await household.save();
-    }
-
-    if (inviteCode) {
-      await HouseholdInvite.findOneAndUpdate(
-        { householdId: household._id, email: normalizedEmail, inviteCode: household.inviteCode },
-        { $set: { status: 'accepted', acceptedAt: new Date() } }
-      );
-    }
-
-    res.status(201).json({ token: tokenFor(user), user: publicUser(user), household });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Signup failed.' });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email: normalizeEmail(email) });
-    if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
-
-    const ok = await bcrypt.compare(String(password || ''), user.passwordHash);
-    if (!ok) return res.status(401).json({ error: 'Invalid email or password.' });
-
-    const household = await Household.findById(user.householdId).lean();
-    res.json({ token: tokenFor(user), user: publicUser(user), household });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Login failed.' });
-  }
-});
-
-app.get('/api/me', authenticate, async (req, res) => {
-  const household = await Household.findById(req.householdId).lean();
-  res.json({ user: publicUser(req.user), household });
-});
-
-
-app.put('/api/account', authenticate, async (req, res) => {
-  try {
-    const updates = {};
-
-    if (typeof req.body.name === 'string') {
-      const name = req.body.name.trim();
-      if (!name) return res.status(400).json({ error: 'Name is required.' });
-      if (name.length > 80) return res.status(400).json({ error: 'Name must be 80 characters or fewer.' });
-      updates.name = name;
-    }
-
-    if (req.body.profilePic !== undefined) {
-      const profilePic = String(req.body.profilePic || '');
-      if (profilePic.length > 1600000) {
-        return res.status(400).json({ error: 'Profile picture is too large.' });
-      }
-      updates.profilePic = profilePic;
-    }
-
-    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true, runValidators: true });
-    if (!user) return res.status(404).json({ error: 'User not found.' });
-
-    broadcastHouseholdUpdate(req, 'account:updated', { userId: user._id.toString() });
-    res.json({ user: publicUser(user) });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Account update failed.' });
-  }
-});
-
-app.get('/api/household', authenticate, async (req, res) => {
-  const [household, members, invites] = await Promise.all([
-    Household.findById(req.householdId).lean(),
-    User.find({ householdId: req.householdId }).select('name email role profilePic createdAt').sort({ createdAt: 1 }).lean(),
-    HouseholdInvite.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).limit(20).lean()
-  ]);
-  res.json({ household, members, invites: invites.map(publicInvite) });
-});
-
-app.get('/api/export/user-data', authenticate, async (req, res) => {
-  try {
-    const [household, members, invites, recipes, restaurants, plannerMeals, groceryItems, mealHistory] = await Promise.all([
-      Household.findById(req.householdId).lean(),
-      User.find({ householdId: req.householdId })
-        .select('name email role profilePic createdAt updatedAt')
-        .sort({ createdAt: 1 })
-        .lean(),
-      HouseholdInvite.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
-      Recipe.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
-      Restaurant.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
-      MealPlan.find({ householdId: req.householdId }).sort({ date: 1, mealType: 1 }).lean(),
-      GroceryItem.find({ householdId: req.householdId }).sort({ checked: 1, category: 1, name: 1 }).lean(),
-      MealHistory.find({ householdId: req.householdId }).sort({ date: -1, createdAt: -1 }).lean()
-    ]);
-
-    if (!household) return res.status(404).json({ error: 'Household not found.' });
-
-    res.json({
-      exportedAt: new Date().toISOString(),
-      exportType: 'homeplate-user-data',
-      version: 1,
-      account: publicUser(req.user),
-      household,
-      members,
-      invites: invites.map(publicInvite),
-      recipes,
-      restaurants,
-      plannerMeals,
-      groceryItems,
-      mealHistory
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Unable to export user data.' });
-  }
-});
-
-app.post('/api/household/invites', authenticate, async (req, res) => {
-  try {
-    const email = normalizeEmail(req.body.email);
-    if (!email || !isValidEmail(email)) {
-      return res.status(400).json({ error: 'Enter a valid recipient email.' });
-    }
-
-    const household = await Household.findById(req.householdId).lean();
-    if (!household) return res.status(404).json({ error: 'Household not found.' });
-
-    const existingUser = await User.findOne({ email }).lean();
-    if (existingUser?.householdId && String(existingUser.householdId) === String(req.householdId)) {
-      return res.status(409).json({ error: 'That email is already in this household.' });
-    }
-
-    const invite = await HouseholdInvite.findOneAndUpdate(
-      { householdId: req.householdId, email },
-      {
-        $set: {
-          email,
-          inviteCode: household.inviteCode,
-          invitedBy: req.user._id,
-          status: 'pending',
-          lastSentAt: new Date()
-        }
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
-
-    broadcastHouseholdUpdate(req, 'household:invite-created', { inviteId: invite._id.toString() });
-    res.status(201).json({ invite: publicInvite(invite), householdName: household.name });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Unable to create invite.' });
-  }
-});
-
-app.post('/api/household/join', authenticate, async (req, res) => {
-  try {
-    const inviteCode = String(req.body.inviteCode || '').trim().toUpperCase();
-    if (!inviteCode) {
-      return res.status(400).json({ error: 'Invite code is required.' });
-    }
-
-    const household = await Household.findOne({ inviteCode });
-    if (!household) {
-      return res.status(404).json({ error: 'Invite code was not found.' });
-    }
-
-    if (String(req.user.householdId) === String(household._id)) {
-      return res.status(409).json({ error: 'You are already in this household.' });
-    }
-
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user._id,
-      { $set: { householdId: household._id, role: 'member' } },
-      { new: true, runValidators: true }
-    );
-    if (!updatedUser) return res.status(404).json({ error: 'User not found.' });
-
-    await HouseholdInvite.findOneAndUpdate(
-      { householdId: household._id, email: req.user.email },
-      {
-        $set: {
-          email: req.user.email,
-          inviteCode: household.inviteCode,
-          status: 'accepted',
-          acceptedAt: new Date()
-        }
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
-
-    io.to(`household:${household._id.toString()}`).emit('household:update', {
-      type: 'household:member-joined',
-      householdId: household._id.toString(),
-      actorId: updatedUser._id.toString(),
-      at: new Date().toISOString()
-    });
-    res.json({ user: publicUser(updatedUser), household: household.toObject() });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Unable to join household.' });
-  }
-});
-
-app.patch('/api/household', authenticate, async (req, res) => {
-  const update = {};
-  if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
-    const name = String(req.body.name || '').trim();
-    if (!name) return res.status(400).json({ error: 'Household name is required.' });
-    update.name = name.slice(0, 80);
+/* Mobile-specific app optimization */
+@media (max-width: 640px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
-  const household = await Household.findByIdAndUpdate(req.householdId, update, { new: true }).lean();
-  broadcastHouseholdUpdate(req, 'household:updated');
-  res.json(household);
-});
-
-app.get('/api/recipes', authenticate, async (req, res) => {
-  const { q, mealType, cuisine, tag } = req.query;
-  const filter = { householdId: req.householdId };
-  if (q) filter.name = { $regex: escapeRegex(q), $options: 'i' };
-  if (mealType) filter.mealTypes = mealType;
-  if (cuisine) filter.cuisine = { $regex: `^${escapeRegex(cuisine)}$`, $options: 'i' };
-  if (tag) filter.tags = { $regex: `^${escapeRegex(tag)}$`, $options: 'i' };
-
-  const recipes = await Recipe.find(filter).sort({ favorite: -1, updatedAt: -1 }).lean();
-  res.json(recipes);
-});
-
-app.post('/api/recipes', authenticate, async (req, res) => {
-  try {
-    const recipe = await Recipe.create({
-      householdId: req.householdId,
-      name: req.body.name,
-      mealTypes: Array.isArray(req.body.mealTypes) ? req.body.mealTypes : normalizeTags(req.body.mealTypes),
-      cuisine: req.body.cuisine || '',
-      ingredients: parseIngredientLines(req.body.ingredientsText ?? req.body.ingredients),
-      instructions: req.body.instructions || '',
-      prepTime: Number(req.body.prepTime || 0),
-      cookTime: Number(req.body.cookTime || 0),
-      difficulty: req.body.difficulty || 'easy',
-      tags: normalizeTags(req.body.tags),
-      rating: Number(req.body.rating || 0),
-      favorite: Boolean(req.body.favorite),
-      originalScan: req.body.originalScan || '',
-      originalScanName: req.body.originalScanName || '',
-      importSource: req.body.importSource || '',
-      importNotes: req.body.importNotes || '',
-      createdBy: req.user._id
-    });
-    broadcastHouseholdUpdate(req, 'recipes:created', { recipeId: recipe._id.toString() });
-    res.status(201).json(recipe);
-  } catch (error) {
-    res.status(400).json({ error: error.message || 'Could not create recipe.' });
-  }
-});
-
-app.put('/api/recipes/:id', authenticate, async (req, res) => {
-  const update = {
-    name: req.body.name,
-    mealTypes: Array.isArray(req.body.mealTypes) ? req.body.mealTypes : normalizeTags(req.body.mealTypes),
-    cuisine: req.body.cuisine || '',
-    ingredients: parseIngredientLines(req.body.ingredientsText ?? req.body.ingredients),
-    instructions: req.body.instructions || '',
-    prepTime: Number(req.body.prepTime || 0),
-    cookTime: Number(req.body.cookTime || 0),
-    difficulty: req.body.difficulty || 'easy',
-    tags: normalizeTags(req.body.tags),
-    rating: Number(req.body.rating || 0),
-    favorite: Boolean(req.body.favorite),
-    originalScan: req.body.originalScan || '',
-    originalScanName: req.body.originalScanName || '',
-    importSource: req.body.importSource || '',
-    importNotes: req.body.importNotes || ''
-  };
-  const recipe = await Recipe.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
-  if (!recipe) return res.status(404).json({ error: 'Recipe not found.' });
-  broadcastHouseholdUpdate(req, 'recipes:updated', { recipeId: recipe._id.toString() });
-  res.json(recipe);
-});
-
-app.delete('/api/recipes/:id', authenticate, async (req, res) => {
-  await Recipe.deleteOne({ _id: req.params.id, householdId: req.householdId });
-  await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'recipe', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted recipe' });
-  broadcastHouseholdUpdate(req, 'recipes:deleted', { recipeId: req.params.id });
-  res.json({ ok: true });
-});
-
-app.get('/api/restaurants', authenticate, async (req, res) => {
-  const { q, cuisine, tag, priceLevel } = req.query;
-  const filter = { householdId: req.householdId };
-  if (q) filter.name = { $regex: escapeRegex(q), $options: 'i' };
-  if (cuisine) filter.cuisine = { $regex: `^${escapeRegex(cuisine)}$`, $options: 'i' };
-  if (tag) filter.tags = { $regex: `^${escapeRegex(tag)}$`, $options: 'i' };
-  if (priceLevel) filter.priceLevel = priceLevel;
-
-  const restaurants = await Restaurant.find(filter).sort({ favorite: -1, updatedAt: -1 }).lean();
-  res.json(restaurants);
-});
-
-app.post('/api/restaurants', authenticate, async (req, res) => {
-  try {
-    const restaurant = await Restaurant.create({
-      householdId: req.householdId,
-      name: req.body.name,
-      cuisine: req.body.cuisine || '',
-      priceLevel: req.body.priceLevel || '$$',
-      location: req.body.location || '',
-      favoriteDishes: normalizeTags(req.body.favoriteDishes),
-      tags: normalizeTags(req.body.tags),
-      rating: Number(req.body.rating || 0),
-      favorite: Boolean(req.body.favorite),
-      createdBy: req.user._id
-    });
-    broadcastHouseholdUpdate(req, 'restaurants:created', { restaurantId: restaurant._id.toString() });
-    res.status(201).json(restaurant);
-  } catch (error) {
-    res.status(400).json({ error: error.message || 'Could not create restaurant.' });
-  }
-});
-
-app.put('/api/restaurants/:id', authenticate, async (req, res) => {
-  const update = {
-    name: req.body.name,
-    cuisine: req.body.cuisine || '',
-    priceLevel: req.body.priceLevel || '$$',
-    location: req.body.location || '',
-    favoriteDishes: normalizeTags(req.body.favoriteDishes),
-    tags: normalizeTags(req.body.tags),
-    rating: Number(req.body.rating || 0),
-    favorite: Boolean(req.body.favorite)
-  };
-  const restaurant = await Restaurant.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
-  if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });
-  broadcastHouseholdUpdate(req, 'restaurants:updated', { restaurantId: restaurant._id.toString() });
-  res.json(restaurant);
-});
-
-app.delete('/api/restaurants/:id', authenticate, async (req, res) => {
-  await Restaurant.deleteOne({ _id: req.params.id, householdId: req.householdId });
-  await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'restaurant', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted restaurant' });
-  broadcastHouseholdUpdate(req, 'restaurants:deleted', { restaurantId: req.params.id });
-  res.json({ ok: true });
-});
-
-app.get('/api/restaurants/random', authenticate, async (req, res) => {
-  const { cuisine, tag, priceLevel } = req.query;
-  const filter = { householdId: req.householdId };
-  if (cuisine) filter.cuisine = { $regex: escapeRegex(cuisine), $options: 'i' };
-  if (tag) filter.tags = { $regex: escapeRegex(tag), $options: 'i' };
-  if (priceLevel) filter.priceLevel = priceLevel;
-
-  const restaurants = await Restaurant.find(filter).lean();
-  if (!restaurants.length) return res.status(404).json({ error: 'No matching restaurants found.' });
-
-  const now = Date.now();
-  const weighted = restaurants.flatMap(restaurant => {
-    const ratingBoost = Math.max(1, Math.round((restaurant.rating || 0) + 1));
-    const favoriteBoost = restaurant.favorite ? 2 : 0;
-    const daysSince = restaurant.lastVisitedAt
-      ? Math.min(14, Math.floor((now - new Date(restaurant.lastVisitedAt).getTime()) / 86400000))
-      : 14;
-    const recencyBoost = Math.max(1, Math.floor(daysSince / 3));
-    const weight = ratingBoost + favoriteBoost + recencyBoost;
-    return Array.from({ length: weight }, () => restaurant);
-  });
-
-  const pick = weighted[Math.floor(Math.random() * weighted.length)];
-  res.json({ pick, poolSize: restaurants.length });
-});
-
-app.get('/api/planner', authenticate, async (req, res) => {
-  try {
-    const weekStart = req.query.weekStart || startOfCurrentWeek();
-    const dates = getDateRange(weekStart, req.query.days);
-    const plans = await MealPlan.find({ householdId: req.householdId, date: { $in: dates } }).lean();
-    res.json({ weekStart, dates, plans });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-app.put('/api/planner/slot', authenticate, async (req, res) => {
-  try {
-    const { date, mealType, time, sourceType, sourceId, customName, status, notes } = req.body;
-    if (!date || !mealType) return res.status(400).json({ error: 'date and mealType are required.' });
-
-    const plan = await MealPlan.findOneAndUpdate(
-      { householdId: req.householdId, date, mealType },
-      {
-        householdId: req.householdId,
-        date,
-        mealType,
-        time: time || '',
-        sourceType: sourceType || 'custom',
-        sourceId: sourceId || null,
-        customName: customName || '',
-        status: status || 'planned',
-        notes: notes || '',
-        updatedBy: req.user._id
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    await upsertHistoryFromPlan(plan, req.user._id);
-    broadcastHouseholdUpdate(req, 'planner:updated', { planId: plan._id.toString() });
-    res.json(plan);
-  } catch (error) {
-    res.status(400).json({ error: error.message || 'Could not update meal slot.' });
-  }
-});
-
-app.delete('/api/planner/:id', authenticate, async (req, res) => {
-  await MealPlan.deleteOne({ _id: req.params.id, householdId: req.householdId });
-  broadcastHouseholdUpdate(req, 'planner:deleted', { planId: req.params.id });
-  res.json({ ok: true });
-});
-
-app.get('/api/grocery', authenticate, async (req, res) => {
-  const items = await GroceryItem.find({ householdId: req.householdId }).sort({ checked: 1, category: 1, name: 1 }).lean();
-  res.json(items);
-});
-
-app.post('/api/grocery', authenticate, async (req, res) => {
-  try {
-    const item = await GroceryItem.create({
-      householdId: req.householdId,
-      name: req.body.name,
-      quantity: req.body.quantity || '',
-      unit: req.body.unit || '',
-      category: req.body.category || 'Other',
-      checked: Boolean(req.body.checked),
-      addedBy: req.user._id,
-      recipeId: req.body.recipeId || null
-    });
-    broadcastHouseholdUpdate(req, 'grocery:created', { itemId: item._id.toString() });
-    res.status(201).json(item);
-  } catch (error) {
-    res.status(400).json({ error: error.message || 'Could not create grocery item.' });
-  }
-});
-
-app.put('/api/grocery/:id', authenticate, async (req, res) => {
-  const update = {
-    name: req.body.name,
-    quantity: req.body.quantity || '',
-    unit: req.body.unit || '',
-    category: req.body.category || 'Other',
-    checked: Boolean(req.body.checked)
-  };
-  const item = await GroceryItem.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
-  if (!item) return res.status(404).json({ error: 'Grocery item not found.' });
-  broadcastHouseholdUpdate(req, 'grocery:updated', { itemId: item._id.toString() });
-  res.json(item);
-});
-
-app.delete('/api/grocery/:id', authenticate, async (req, res) => {
-  await GroceryItem.deleteOne({ _id: req.params.id, householdId: req.householdId });
-  broadcastHouseholdUpdate(req, 'grocery:deleted', { itemId: req.params.id });
-  res.json({ ok: true });
-});
-
-app.post('/api/grocery/clear-checked', authenticate, async (req, res) => {
-  const result = await GroceryItem.deleteMany({ householdId: req.householdId, checked: true });
-  broadcastHouseholdUpdate(req, 'grocery:cleared', { deleted: result.deletedCount });
-  res.json({ ok: true, deleted: result.deletedCount });
-});
-
-app.post('/api/grocery/generate-from-plan', authenticate, async (req, res) => {
-  try {
-    const weekStart = req.body.weekStart || startOfCurrentWeek();
-    const dates = getDateRange(weekStart, req.body.days);
-    const plans = await MealPlan.find({ householdId: req.householdId, date: { $in: dates }, sourceType: 'recipe', sourceId: { $ne: null } }).lean();
-    const recipeIds = [...new Set(plans.map(plan => String(plan.sourceId)))];
-    const recipes = await Recipe.find({ householdId: req.householdId, _id: { $in: recipeIds } }).lean();
-
-    const existing = await GroceryItem.find({ householdId: req.householdId, checked: false }).lean();
-    const existingKeys = new Set(existing.map(item => `${item.name.toLowerCase()}|${item.category.toLowerCase()}|${item.unit.toLowerCase()}`));
-    const created = [];
-
-    for (const recipe of recipes) {
-      for (const ingredient of recipe.ingredients || []) {
-        const key = `${ingredient.name.toLowerCase()}|${String(ingredient.category || 'Other').toLowerCase()}|${String(ingredient.unit || '').toLowerCase()}`;
-        if (existingKeys.has(key)) continue;
-        existingKeys.add(key);
-        created.push(await GroceryItem.create({
-          householdId: req.householdId,
-          name: ingredient.name,
-          quantity: ingredient.quantity || '',
-          unit: ingredient.unit || '',
-          category: ingredient.category || 'Other',
-          addedBy: req.user._id,
-          recipeId: recipe._id
-        }));
-      }
-    }
-
-    broadcastHouseholdUpdate(req, 'grocery:generated', { createdCount: created.length });
-    res.status(201).json({ createdCount: created.length, items: created });
-  } catch (error) {
-    res.status(400).json({ error: error.message || 'Could not generate grocery list.' });
-  }
-});
-
-app.get('/api/history', authenticate, async (req, res) => {
-  const limit = Math.min(Number(req.query.limit || 100), 250);
-  const history = await MealHistory.find({ householdId: req.householdId }).sort({ date: -1, createdAt: -1 }).limit(limit).lean();
-  res.json(history);
-});
-
-app.post('/api/history', authenticate, async (req, res) => {
-  try {
-    const { name, cuisine } = await getSourceNameAndCuisine(req.body.sourceType, req.body.sourceId, req.body.name, req.householdId);
-    const history = await MealHistory.create({
-      householdId: req.householdId,
-      date: req.body.date,
-      mealType: req.body.mealType,
-      sourceType: req.body.sourceType || 'custom',
-      sourceId: req.body.sourceId || null,
-      name,
-      cuisine: req.body.cuisine || cuisine,
-      rating: Number(req.body.rating || 0),
-      notes: req.body.notes || '',
-      cost: Number(req.body.cost || 0),
-      createdBy: req.user._id
-    });
-    broadcastHouseholdUpdate(req, 'history:created', { historyId: history._id.toString() });
-    res.status(201).json(history);
-  } catch (error) {
-    res.status(400).json({ error: error.message || 'Could not add meal history.' });
-  }
-});
-
-app.delete('/api/history/:id', authenticate, async (req, res) => {
-  await MealHistory.deleteOne({ _id: req.params.id, householdId: req.householdId });
-  broadcastHouseholdUpdate(req, 'history:deleted', { historyId: req.params.id });
-  res.json({ ok: true });
-});
-
-app.get('/api/suggestions', authenticate, async (req, res) => {
-  const { mealType, cuisine } = req.query;
-  const history = await MealHistory.find({ householdId: req.householdId }).sort({ date: -1 }).limit(80).lean();
-  const recentNames = new Set(history.slice(0, 14).map(item => item.name.toLowerCase()));
-
-  const recipeFilter = { householdId: req.householdId };
-  if (mealType) recipeFilter.mealTypes = mealType;
-  if (cuisine) recipeFilter.cuisine = { $regex: escapeRegex(cuisine), $options: 'i' };
-
-  const restaurantFilter = { householdId: req.householdId };
-  if (cuisine) restaurantFilter.cuisine = { $regex: escapeRegex(cuisine), $options: 'i' };
-
-  const [recipes, restaurants] = await Promise.all([
-    Recipe.find(recipeFilter).lean(),
-    Restaurant.find(restaurantFilter).lean()
-  ]);
-
-  const scoredRecipes = recipes.map(recipe => ({
-    type: 'recipe',
-    id: recipe._id,
-    name: recipe.name,
-    cuisine: recipe.cuisine,
-    rating: recipe.rating,
-    reason: recentNames.has(recipe.name.toLowerCase())
-      ? 'Good match, but you had it recently.'
-      : recipe.favorite
-        ? 'Favorite recipe you have not eaten recently.'
-        : recipe.rating >= 4
-          ? 'Highly rated recipe option.'
-          : 'Recipe option that fits the selected filters.',
-    score: (recipe.favorite ? 3 : 0) + (recipe.rating || 0) + (recentNames.has(recipe.name.toLowerCase()) ? -3 : 2) + (recipe.timesCooked ? 0.5 : 1)
-  }));
-
-  const scoredRestaurants = restaurants.map(restaurant => ({
-    type: 'restaurant',
-    id: restaurant._id,
-    name: restaurant.name,
-    cuisine: restaurant.cuisine,
-    rating: restaurant.rating,
-    reason: recentNames.has(restaurant.name.toLowerCase())
-      ? 'Restaurant match, but you had it recently.'
-      : restaurant.favorite
-        ? 'Favorite restaurant that fits the mood.'
-        : restaurant.rating >= 4
-          ? 'Highly rated restaurant option.'
-          : 'Restaurant option that fits the selected filters.',
-    score: (restaurant.favorite ? 3 : 0) + (restaurant.rating || 0) + (recentNames.has(restaurant.name.toLowerCase()) ? -3 : 1)
-  }));
-
-  const suggestions = [...scoredRecipes, ...scoredRestaurants]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
-
-  res.json(suggestions);
-});
-
-app.get('/api/stats', authenticate, async (req, res) => {
-  const [recipes, restaurants, history, groceryOpen, groceryTotal, plans] = await Promise.all([
-    Recipe.find({ householdId: req.householdId }).lean(),
-    Restaurant.find({ householdId: req.householdId }).lean(),
-    MealHistory.find({ householdId: req.householdId }).sort({ date: -1 }).limit(365).lean(),
-    GroceryItem.countDocuments({ householdId: req.householdId, checked: false }),
-    GroceryItem.countDocuments({ householdId: req.householdId }),
-    MealPlan.find({ householdId: req.householdId }).lean()
-  ]);
-
-  const cuisineCounts = {};
-  const mealTypeCounts = {};
-  let homeCooked = 0;
-  let restaurantMeals = 0;
-
-  for (const item of history) {
-    if (item.cuisine) cuisineCounts[item.cuisine] = (cuisineCounts[item.cuisine] || 0) + 1;
-    mealTypeCounts[item.mealType] = (mealTypeCounts[item.mealType] || 0) + 1;
-    if (item.sourceType === 'recipe') homeCooked += 1;
-    if (item.sourceType === 'restaurant') restaurantMeals += 1;
+  body {
+    min-width: 0;
   }
 
-  const topRecipes = recipes
-    .slice()
-    .sort((a, b) => (b.timesCooked || 0) - (a.timesCooked || 0))
-    .slice(0, 5)
-    .map(recipe => ({ id: recipe._id, name: recipe.name, timesCooked: recipe.timesCooked || 0, rating: recipe.rating || 0 }));
+  .auth-screen {
+    padding: 14px;
+    align-items: start;
+  }
 
-  const topRestaurants = restaurants
-    .slice()
-    .sort((a, b) => (b.timesVisited || 0) - (a.timesVisited || 0))
-    .slice(0, 5)
-    .map(restaurant => ({ id: restaurant._id, name: restaurant.name, timesVisited: restaurant.timesVisited || 0, rating: restaurant.rating || 0 }));
+  .auth-card {
+    margin-top: 10px;
+    padding: 18px;
+    border-radius: 16px;
+  }
 
-  const planned = plans.filter(plan => plan.status !== 'skipped').length;
-  const eaten = plans.filter(plan => plan.status === 'eaten').length;
+  .auth-card h1 {
+    font-size: clamp(2.2rem, 18vw, 3.5rem);
+  }
 
-  res.json({
-    totals: {
-      recipes: recipes.length,
-      restaurants: restaurants.length,
-      history: history.length,
-      groceryOpen,
-      groceryTotal,
-      planned,
-      eaten,
-      planningCompletion: planned ? Math.round((eaten / planned) * 100) : 0,
-      homeCooked,
-      restaurantMeals
-    },
-    cuisineCounts,
-    mealTypeCounts,
-    topRecipes,
-    topRestaurants
-  });
-});
+  .topnav {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 9px;
+  }
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+  .topnav-brand {
+    min-width: 0;
+    align-items: flex-start;
+    text-align: left;
+  }
 
-app.use((error, req, res, next) => {
-  console.error(error);
-  res.status(500).json({ error: 'Unexpected server error.' });
-});
+  .topnav-logo {
+    font-size: 21px;
+  }
 
-httpServer.listen(PORT, () => {
-  console.log(`Meal planner running on port ${PORT}`);
-});
+  .topnav-sub {
+    max-width: 46vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topnav-right {
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .user-pill {
+    width: auto;
+    min-height: 34px;
+    padding: 3px;
+    gap: 0;
+  }
+
+  .user-pill-name {
+    display: none;
+  }
+
+  .topnav-right .logout-btn {
+    width: auto;
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  .topnav-nav {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    overflow: visible;
+  }
+
+  .nav-item {
+    width: auto;
+    min-width: 0;
+    min-height: 42px;
+    padding: 6px 3px;
+    font-size: 8.5px;
+  }
+
+  .nav-item .ti,
+  .nav-item .material-symbols-outlined {
+    font-size: 18px;
+  }
+
+  .content-panel {
+    width: 100%;
+    padding: 10px 10px 24px;
+    gap: 10px;
+  }
+
+  .app-shell[data-page="planner"] .content-panel {
+    width: 100%;
+  }
+
+  .topbar,
+  .toolbar {
+    gap: 8px;
+  }
+
+  .toolbar-title,
+  .topbar h2 {
+    font-size: 1.7rem;
+  }
+
+  .banner-area {
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+
+  .banner-tagline {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .planner-toolbar {
+    align-items: stretch;
+  }
+
+  .planner-toolbar .toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .planner-toolbar .toolbar button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .calendar-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .calendar-day {
+    aspect-ratio: auto;
+    min-height: 245px;
+    padding: 11px;
+  }
+
+  .calendar-day-header {
+    align-items: center;
+  }
+
+  .calendar-add-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .calendar-meals {
+    max-height: 280px;
+  }
+
+  .calendar-meal {
+    gap: 9px;
+  }
+
+  .calendar-meal-actions {
+    display: flex;
+  }
+
+  .calendar-meal-actions .badge {
+    justify-content: center;
+  }
+
+  .grid,
+  .grid.two,
+  .grid.three,
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .card,
+  .form-card,
+  .stat-card {
+    padding: 13px;
+    border-radius: 14px;
+  }
+
+  .list-item {
+    padding: 12px;
+  }
+
+  .list-title {
+    gap: 8px;
+  }
+
+  .list-title .action-row {
+    width: 100%;
+  }
+
+  .action-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .topbar-actions .primary,
+  .topbar-actions .secondary,
+  .planner-toolbar .primary,
+  .planner-toolbar .secondary,
+  .planner-toolbar .ghost,
+  .action-row .primary,
+  .action-row .secondary,
+  .action-row .ghost,
+  .action-row .danger,
+  .action-row .small-btn {
+    width: 100%;
+  }
+
+  .grocery-item {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .grocery-item .small-btn {
+    grid-column: 1 / -1;
+  }
+
+  .accent-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .accent-swatch {
+    grid-template-columns: auto 1fr;
+    justify-items: start;
+    min-height: 42px;
+  }
+
+  .accent-swatch span {
+    margin-top: 0;
+  }
+
+  .profile-settings-row,
+  .member-identity {
+    align-items: flex-start;
+  }
+
+  .profile-settings-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .profile-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .invite-code {
+    font-size: clamp(1.6rem, 13vw, 2.35rem);
+    letter-spacing: 0.12em;
+  }
+
+  .toast {
+    top: 137px;
+    font-size: 12px;
+  }
+
+  .theme-toggle {
+    width: 152px;
+  }
+
+  .settings-logout-card .logout-btn {
+    width: 100%;
+  }
+
+  .settings-export-card .secondary {
+    width: 100%;
+  }
+
+  .developer-footer {
+    padding-top: 10px;
+  }
+
+  .developer-logo {
+    width: 76px;
+  }
+
+  .time-modal-overlay {
+    padding: 10px;
+  }
+
+  .time-modal-card {
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+    border-radius: 18px 18px 14px 14px;
+  }
+}
+
+@media (max-width: 390px) {
+  .topnav-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topnav-sub {
+    max-width: 40vw;
+  }
+
+  .topbar-actions,
+  .planner-toolbar .toolbar,
+  .calendar-meal-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Requested invite/logo/planner refinements */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.content-panel {
+  flex: 1;
+  min-height: calc(100vh - 68px);
+}
+
+.developer-footer {
+  margin-top: auto;
+  padding: 18px 0 0;
+}
+
+.developer-logo-wrap {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.developer-logo {
+  filter: brightness(0);
+}
+
+:root[data-theme="dark"] .developer-logo {
+  filter: none;
+}
+
+.calendar-add-btn {
+  font-size: 0;
+  line-height: 1;
+  text-align: center;
+}
+
+.calendar-add-btn::before {
+  content: '+';
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.calendar-day-header > div {
+  min-width: 0;
+}
+
+.calendar-day-name {
+  font-size: clamp(12px, 0.9vw, 15px);
+}
+
+.calendar-day-date {
+  margin-top: 5px;
+}
+
+.invite-code {
+  gap: 0.32em;
+  letter-spacing: 0;
+}
+
+.invite-code span {
+  display: inline-block;
+}
+
+.invite-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.invite-list {
+  margin-top: 14px;
+}
+
+.invite-list-item .invite-code {
+  display: inline-flex;
+  margin-left: 4px;
+  font-size: 0.95em;
+}
+
+@media (max-width: 620px) {
+  .content-panel {
+    min-height: calc(100vh - 118px);
+  }
+
+  .developer-footer {
+    padding-top: 14px;
+  }
+}
+
+
+/* Requested copy button and developer logo refinements */
+.developer-logo {
+  width: 110px;
+}
+
+.invite-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.copy-invite-btn {
+  min-height: 32px;
+  padding-inline: 12px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 620px) {
+  .developer-logo {
+    width: 104px;
+  }
+
+  .invite-code-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .copy-invite-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Mobile drawer navigation from implementation guide */
+.topnav-nav .control-panel-content,
+.topnav-nav .control-panel-scroll-inner {
+  display: contents;
+}
+
+.mobile-drawer-head,
+.panel-edge-toggle {
+  display: none;
+}
+
+.panel-edge-toggle {
+  color: var(--text-primary);
+  background: var(--white);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.panel-edge-toggle:active {
+  transform: scale(0.97);
+}
+
+.panel-edge-toggle:hover,
+body.mobile-drawer-open .panel-edge-toggle {
+  color: var(--brand);
+  border-color: var(--brand-border);
+  background: var(--brand-light);
+}
+
+.panel-edge-toggle svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+@media (max-width: 980px) {
+  :root {
+    --mobile-app-bar-height: 3.35rem;
+    --mobile-web-drawer-width: min(86vw, 22rem);
+  }
+
+  html,
+  body,
+  body.mobile-drawer-open,
+  body.mobile-sidebar-open {
+    width: 100% !important;
+    max-width: 100% !important;
+    overscroll-behavior-x: none !important;
+    touch-action: pan-y !important;
+  }
+
+  body.mobile-drawer-open,
+  body.mobile-sidebar-open {
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  .app-shell {
+    position: relative;
+    min-height: 100dvh;
+    isolation: isolate;
+  }
+
+  .app-shell::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 180;
+    display: block;
+    background: rgba(0, 0, 0, 0.54);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.22s ease, visibility 0.22s ease;
+  }
+
+  body.mobile-drawer-open .app-shell::after,
+  body.mobile-sidebar-open .app-shell::after {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .topnav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  body.mobile-drawer-open .topnav,
+  body.mobile-sidebar-open .topnav {
+    z-index: 80;
+  }
+
+  .topnav-brand {
+    min-width: 0;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .topnav-right {
+    justify-content: flex-end;
+  }
+
+  .control-panel.topnav-nav,
+  .control-panel.topnav-nav.collapsed,
+  body.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    z-index: 220 !important;
+    display: block !important;
+    width: var(--mobile-web-drawer-width) !important;
+    min-width: 0 !important;
+    max-width: var(--mobile-web-drawer-width) !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 1rem 1rem 0 !important;
+    background: var(--white) !important;
+    border: 0 !important;
+    border-right: 1px solid var(--border) !important;
+    transform: translate3d(-105%, 0, 0) !important;
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s ease !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    isolation: isolate !important;
+    --nav-hover-opacity: 0 !important;
+  }
+
+  body.mobile-drawer-open .control-panel.topnav-nav,
+  body.mobile-drawer-open .control-panel.topnav-nav.collapsed,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open .control-panel.topnav-nav,
+  body.mobile-sidebar-open .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    transform: translate3d(0, 0, 0) !important;
+    pointer-events: auto !important;
+    box-shadow: 1.25rem 0 2.75rem rgba(0, 0, 0, 0.28) !important;
+  }
+
+  .control-panel.topnav-nav::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-panel-content,
+  .control-panel-scroll-inner,
+  body.mobile-drawer-open .control-panel-content,
+  body.mobile-drawer-open .control-panel-scroll-inner,
+  body.mobile-sidebar-open .control-panel-content,
+  body.mobile-sidebar-open .control-panel-scroll-inner {
+    display: block !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+  }
+
+  .control-panel-content,
+  body.mobile-drawer-open .control-panel-content,
+  body.mobile-drawer-open .control-panel-scroll-inner,
+  body.mobile-sidebar-open .control-panel-content,
+  body.mobile-sidebar-open .control-panel-scroll-inner {
+    position: relative !important;
+    z-index: 221 !important;
+  }
+
+  .control-panel-scroll-inner {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: calc(1rem + env(safe-area-inset-top, 0px)) 0.95rem calc(5.25rem + env(safe-area-inset-bottom, 0px)) !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    touch-action: pan-y !important;
+  }
+
+  .mobile-drawer-head {
+    display: flex !important;
+    flex-direction: column;
+    gap: 4px;
+    padding: 5px 4px 14px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-drawer-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    width: fit-content;
+    color: var(--brand);
+    font-size: 24px;
+    font-weight: 900;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .mobile-drawer-title .homeplate-logo-icon {
+    width: 21px;
+    height: 21px;
+  }
+
+  .mobile-drawer-sub {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .control-panel.topnav-nav .nav-item {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 0 12px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 10px !important;
+    border-radius: 12px !important;
+    color: var(--text-secondary) !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.01em;
+    background: transparent !important;
+    flex-shrink: 0 !important;
+  }
+
+  .control-panel.topnav-nav .nav-item .ti,
+  .control-panel.topnav-nav .nav-item .material-symbols-outlined {
+    width: 20px;
+    min-width: 20px;
+    font-size: 20px !important;
+    color: currentColor;
+  }
+
+  .control-panel.topnav-nav .nav-item:hover,
+  .control-panel.topnav-nav .nav-item.active {
+    color: var(--brand) !important;
+    background: var(--brand-light) !important;
+  }
+
+  .panel-edge-toggle,
+  body:not(.control-panel-is-collapsed) .panel-edge-toggle,
+  body.control-panel-is-collapsed .panel-edge-toggle,
+  body.mobile-drawer-open .panel-edge-toggle,
+  body.mobile-sidebar-open .panel-edge-toggle {
+    display: inline-flex !important;
+    visibility: visible !important;
+    position: fixed !important;
+    top: auto !important;
+    left: 0.9rem !important;
+    right: auto !important;
+    bottom: calc(0.9rem + env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 230 !important;
+    width: 2.65rem !important;
+    height: 2.65rem !important;
+    min-width: 2.65rem !important;
+    min-height: 2.65rem !important;
+    padding: 0 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 0.95rem !important;
+    transform: none !important;
+    pointer-events: auto !important;
+  }
+
+  .panel-edge-toggle svg,
+  body.control-panel-is-collapsed .panel-edge-toggle svg,
+  body.mobile-drawer-open .panel-edge-toggle svg,
+  body.mobile-sidebar-open .panel-edge-toggle svg {
+    width: 1.2rem !important;
+    height: 1.2rem !important;
+    transform: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .content-panel {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .toast {
+    top: calc(var(--mobile-app-bar-height, 64px) + 10px);
+  }
+}
+
+/* Requested desktop banner and mobile drawer corrections */
+@media (min-width: 981px) {
+  .content-panel > .topbar.toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .content-panel > .topbar.toolbar .toolbar-left {
+    justify-self: start;
+    min-width: 0;
+  }
+
+  .content-panel > .topbar.toolbar .banner-area {
+    justify-self: center;
+  }
+
+  .content-panel > .topbar.toolbar .topbar-actions {
+    justify-self: end;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  body.mobile-drawer-open,
+  body.mobile-sidebar-open,
+  body.modal-open {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+
+  body.mobile-drawer-open .content-panel,
+  body.mobile-sidebar-open .content-panel,
+  body.modal-open .content-panel {
+    max-height: calc(100dvh - var(--mobile-app-bar-height, 58px)) !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+
+  body.modal-open .time-modal-overlay,
+  body.modal-open .time-modal-card {
+    touch-action: pan-y !important;
+  }
+
+  .topnav,
+  body.mobile-drawer-open .topnav,
+  body.mobile-sidebar-open .topnav {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 240 !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  body.mobile-drawer-open .app-shell::after,
+  body.mobile-sidebar-open .app-shell::after {
+    z-index: 180 !important;
+  }
+
+  body.mobile-drawer-open .topnav-brand,
+  body.mobile-drawer-open .topnav-right,
+  body.mobile-sidebar-open .topnav-brand,
+  body.mobile-sidebar-open .topnav-right {
+    pointer-events: none;
+  }
+
+  .panel-edge-toggle,
+  body:not(.control-panel-is-collapsed) .panel-edge-toggle,
+  body.control-panel-is-collapsed .panel-edge-toggle,
+  body.mobile-drawer-open .panel-edge-toggle,
+  body.mobile-sidebar-open .panel-edge-toggle {
+    position: static !important;
+    display: inline-flex !important;
+    visibility: visible !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 2.4rem !important;
+    height: 2.4rem !important;
+    min-width: 2.4rem !important;
+    min-height: 2.4rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0.82rem !important;
+    z-index: 260 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transform: none !important;
+  }
+
+  .topnav-brand {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  .topnav-right {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+  }
+
+  .control-panel.topnav-nav,
+  .control-panel.topnav-nav.collapsed,
+  body.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    z-index: 250 !important;
+  }
+
+  body.mobile-drawer-open .control-panel.topnav-nav,
+  body.mobile-drawer-open .control-panel.topnav-nav.collapsed,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open .control-panel.topnav-nav,
+  body.mobile-sidebar-open .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    z-index: 250 !important;
+    pointer-events: auto !important;
+  }
+
+  .mobile-drawer-head {
+    display: grid !important;
+    grid-template-columns: 2.35rem minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 5px 4px 14px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-drawer-brand {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mobile-drawer-close {
+    width: 2.35rem;
+    height: 2.35rem;
+    min-width: 2.35rem;
+    min-height: 2.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.82rem;
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--text-primary);
+  }
+
+  .mobile-drawer-close:hover,
+  .mobile-drawer-close:focus-visible {
+    color: var(--brand);
+    border-color: var(--brand-border);
+    background: var(--brand-light);
+  }
+
+  .mobile-drawer-close svg {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .mobile-sidebar-profile {
+    width: 100%;
+    min-height: 64px;
+    margin: 0 0 8px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .mobile-sidebar-profile:hover,
+  .mobile-sidebar-profile.active {
+    color: var(--brand);
+    border-color: var(--brand-border);
+    background: var(--brand-light);
+  }
+
+  .user-avatar--drawer {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+  }
+
+  .mobile-sidebar-profile-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mobile-sidebar-profile-text strong {
+    max-width: 100%;
+    overflow: hidden;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-sidebar-profile-text span {
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+}
+
+@media (min-width: 981px) {
+  .mobile-sidebar-profile {
+    display: none !important;
+  }
+}
+
+/* Mobile sidebar touch fixes */
+@media (max-width: 980px) {
+  .topnav,
+  body.mobile-drawer-open .topnav,
+  body.mobile-sidebar-open .topnav {
+    grid-template-columns: minmax(0, 1fr) !important;
+    padding-left: calc(4rem + env(safe-area-inset-left, 0px)) !important;
+    padding-right: 16px !important;
+  }
+
+  .topnav-brand {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    min-width: 0 !important;
+  }
+
+  .topnav-right {
+    display: none !important;
+  }
+
+  .panel-edge-toggle,
+  body:not(.control-panel-is-collapsed) .panel-edge-toggle,
+  body.control-panel-is-collapsed .panel-edge-toggle,
+  body.mobile-sidebar-open .panel-edge-toggle {
+    position: fixed !important;
+    top: calc(0.72rem + env(safe-area-inset-top, 0px)) !important;
+    left: calc(0.78rem + env(safe-area-inset-left, 0px)) !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: 270 !important;
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  body.mobile-drawer-open .panel-edge-toggle,
+  body.mobile-sidebar-open .panel-edge-toggle {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  body.mobile-drawer-open .control-panel.topnav-nav,
+  body.mobile-drawer-open .control-panel.topnav-nav.collapsed,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-drawer-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open .control-panel.topnav-nav,
+  body.mobile-sidebar-open .control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav,
+  body.mobile-sidebar-open.control-panel-is-collapsed .control-panel.topnav-nav.collapsed {
+    z-index: 280 !important;
+    pointer-events: auto !important;
+  }
+
+  body.mobile-drawer-open .control-panel-content,
+  body.mobile-drawer-open .control-panel-scroll-inner,
+  body.mobile-sidebar-open .control-panel-content,
+  body.mobile-sidebar-open .control-panel-scroll-inner {
+    z-index: 281 !important;
+    pointer-events: auto !important;
+  }
+
+  .control-panel.topnav-nav button,
+  .control-panel.topnav-nav .nav-item,
+  .mobile-drawer-close,
+  .mobile-sidebar-profile {
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+  }
+
+  .mobile-drawer-head {
+    grid-template-columns: 2.35rem minmax(0, 1fr) !important;
+    align-items: center !important;
+  }
+
+  .mobile-drawer-close {
+    position: relative !important;
+    z-index: 282 !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    margin: 0 !important;
+  }
+
+  .mobile-drawer-brand {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+}
+
+/* Verified mobile sidebar fix: overrides earlier mobile drawer patches without changing desktop. */
+@media (max-width: 980px) {
+  html,
+  body {
+    width: 100% !important;
+    max-width: 100% !important;
+    overscroll-behavior-x: none !important;
+  }
+
+  body.mobile-drawer-open,
+  body.mobile-sidebar-open,
+  body.modal-open {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+
+  .topnav,
+  body.mobile-drawer-open .topnav,
+  body.mobile-sidebar-open .topnav {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 300 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: center !important;
+    min-height: var(--mobile-app-bar-height, 60px) !important;
+    padding-left: calc(4rem + env(safe-area-inset-left, 0px)) !important;
+    padding-right: calc(14px + env(safe-area-inset-right, 0px)) !important;
+  }
+
+  .topnav-brand,
+  body.mobile-drawer-open .topnav-brand,
+  body.mobile-sidebar-open .topnav-brand {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    min-width: 0 !important;
+    pointer-events: auto !important;
+  }
+
+  .topnav-right,
+  .topnav .topnav-right,
+  .topnav #user-avatar-btn,
+  #user-avatar-btn,
+  .user-avatar--nav,
+  #topnav-avatar-img,
+  #topnav-avatar-fallback,
+  #topnav-user-name {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  #panelEdgeToggle,
+  .panel-edge-toggle,
+  body:not(.control-panel-is-collapsed) #panelEdgeToggle,
+  body.control-panel-is-collapsed #panelEdgeToggle,
+  body:not(.control-panel-is-collapsed) .panel-edge-toggle,
+  body.control-panel-is-collapsed .panel-edge-toggle {
+    position: fixed !important;
+    top: calc(0.7rem + env(safe-area-inset-top, 0px)) !important;
+    left: calc(0.78rem + env(safe-area-inset-left, 0px)) !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: 390 !important;
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 2.45rem !important;
+    height: 2.45rem !important;
+    min-width: 2.45rem !important;
+    min-height: 2.45rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 0.85rem !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+    transform: none !important;
+  }
+
+  #panelEdgeToggle svg,
+  .panel-edge-toggle svg {
+    width: 1.2rem !important;
+    height: 1.2rem !important;
+    transform: none !important;
+  }
+
+  body.mobile-drawer-open #panelEdgeToggle,
+  body.mobile-sidebar-open #panelEdgeToggle,
+  body.mobile-drawer-open .panel-edge-toggle,
+  body.mobile-sidebar-open .panel-edge-toggle {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  .app-shell::after {
+    content: '' !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 320 !important;
+    display: block !important;
+    background: rgba(17, 17, 17, 0.58) !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transition: opacity 0.22s ease, visibility 0.22s ease !important;
+  }
+
+  body.mobile-drawer-open .app-shell::after,
+  body.mobile-sidebar-open .app-shell::after {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  #controlPanel.control-panel.topnav-nav,
+  #controlPanel.control-panel.topnav-nav.collapsed,
+  body.control-panel-is-collapsed #controlPanel.control-panel.topnav-nav,
+  body.control-panel-is-collapsed #controlPanel.control-panel.topnav-nav.collapsed {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    z-index: 350 !important;
+    display: block !important;
+    width: min(84vw, 22rem) !important;
+    min-width: 0 !important;
+    max-width: min(84vw, 22rem) !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    background: var(--white) !important;
+    border: 0 !important;
+    border-right: 1px solid var(--border) !important;
+    border-radius: 0 1rem 1rem 0 !important;
+    box-shadow: none !important;
+    transform: translate3d(-105%, 0, 0) !important;
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s ease !important;
+    pointer-events: none !important;
+    touch-action: pan-y !important;
+    isolation: isolate !important;
+    --nav-hover-opacity: 0 !important;
+  }
+
+  body.mobile-drawer-open #controlPanel.control-panel.topnav-nav,
+  body.mobile-drawer-open #controlPanel.control-panel.topnav-nav.collapsed,
+  body.mobile-drawer-open.control-panel-is-collapsed #controlPanel.control-panel.topnav-nav,
+  body.mobile-drawer-open.control-panel-is-collapsed #controlPanel.control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open #controlPanel.control-panel.topnav-nav,
+  body.mobile-sidebar-open #controlPanel.control-panel.topnav-nav.collapsed,
+  body.mobile-sidebar-open.control-panel-is-collapsed #controlPanel.control-panel.topnav-nav,
+  body.mobile-sidebar-open.control-panel-is-collapsed #controlPanel.control-panel.topnav-nav.collapsed {
+    transform: translate3d(0, 0, 0) !important;
+    pointer-events: auto !important;
+    box-shadow: 1.25rem 0 2.75rem rgba(0, 0, 0, 0.32) !important;
+  }
+
+  #controlPanel::before,
+  #controlPanel.control-panel.topnav-nav::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  #controlPanel .control-panel-content,
+  #controlPanel .control-panel-scroll-inner {
+    position: relative !important;
+    z-index: 360 !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    pointer-events: auto !important;
+  }
+
+  #controlPanel .control-panel-scroll-inner {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: calc(0.92rem + env(safe-area-inset-top, 0px)) 0.95rem calc(2rem + env(safe-area-inset-bottom, 0px)) !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    touch-action: pan-y !important;
+  }
+
+  #controlPanel .mobile-drawer-head {
+    display: grid !important;
+    grid-template-columns: 2.55rem minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: 10px !important;
+    row-gap: 0 !important;
+    width: 100% !important;
+    min-height: 3.2rem !important;
+    padding: 0 0 14px !important;
+    margin: 0 0 8px !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  #controlPanel .mobile-drawer-close {
+    position: relative !important;
+    z-index: 380 !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 2.45rem !important;
+    height: 2.45rem !important;
+    min-width: 2.45rem !important;
+    min-height: 2.45rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 0.85rem !important;
+    border: 1px solid var(--brand-border) !important;
+    background: var(--brand-light) !important;
+    color: var(--brand) !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+  }
+
+  #controlPanel .mobile-drawer-close svg {
+    width: 1.15rem !important;
+    height: 1.15rem !important;
+  }
+
+  #controlPanel .mobile-drawer-brand {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+    padding-left: 0 !important;
+  }
+
+  #controlPanel .mobile-drawer-title {
+    max-width: 100% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    color: var(--brand) !important;
+    font-size: 24px !important;
+    font-weight: 900 !important;
+    letter-spacing: -1px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  #controlPanel .mobile-drawer-sub {
+    color: var(--text-secondary) !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.14em !important;
+    line-height: 1.1 !important;
+    text-transform: uppercase !important;
+  }
+
+  #controlPanel button,
+  #controlPanel .nav-item,
+  #controlPanel .mobile-sidebar-profile {
+    position: relative !important;
+    z-index: 370 !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+  }
+
+  #controlPanel .mobile-sidebar-profile {
+    display: flex !important;
+    width: 100% !important;
+    min-height: 64px !important;
+    margin: 0 0 8px !important;
+  }
+
+  #controlPanel .nav-item {
+    width: 100% !important;
+  }
+}
+
+/* Mobile input zoom prevention */
+@media (max-width: 980px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+    line-height: 1.25 !important;
+  }
+}
+
+/* Printed recipe import assistant */
+.form-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.form-heading-row h3 {
+  margin: 0;
+}
+
+.form-heading-row .small-btn {
+  white-space: nowrap;
+}
+
+.item-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.recipe-import-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(820px, calc(100dvh - 52px));
+  overflow: hidden;
+}
+
+.recipe-import-modal .time-modal-body-inner {
+  max-height: calc(100dvh - 170px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.recipe-import-form {
+  display: grid;
+  gap: 12px;
+}
+
+.recipe-import-upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.recipe-import-preview {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 1px dashed var(--border-mid);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  overflow: hidden;
+}
+
+.recipe-import-preview img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  display: block;
+  border-radius: 10px;
+  background: var(--white);
+}
+
+.recipe-import-preview span,
+.recipe-import-preview strong {
+  display: block;
+  max-width: 100%;
+  margin-top: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-import-preview .ti {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--brand);
+  font-size: 24px;
+}
+
+.recipe-import-preview.empty {
+  color: var(--text-tertiary);
+}
+
+.recipe-import-actions {
+  justify-content: flex-start;
+}
+
+@media (max-width: 780px) {
+  .form-heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .form-heading-row .small-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .recipe-import-overlay {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .recipe-import-modal {
+    width: 100%;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  .recipe-import-modal .time-modal-body-inner {
+    max-height: calc(100dvh - 150px);
+  }
+
+  .recipe-import-upload {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-import-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .item-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* Restaurant cards */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-head h3,
+.restaurant-card h3,
+.restaurant-edit-form h3 {
+  margin-bottom: 4px;
+}
+
+.restaurant-list-head {
+  align-items: end;
+}
+
+.compact-control {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compact-control select {
+  min-width: 174px;
+  height: 34px;
+}
+
+.restaurant-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.restaurant-card {
+  position: relative;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: visible;
+}
+
+.restaurant-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.restaurant-card-titleblock {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.restaurant-card-titleblock h3 {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.restaurant-price-line {
+  margin-top: 4px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.restaurant-card-controls {
+  z-index: 4;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.restaurant-favorite-btn,
+.restaurant-kebab-btn {
+  width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  transition: background 0.14s, color 0.14s, transform 0.14s;
+}
+
+.restaurant-favorite-btn {
+  color: var(--danger);
+}
+
+.restaurant-favorite-btn .material-symbols-outlined {
+  font-size: 20px;
+  font-variation-settings: 'FILL' 0, 'wght' 700, 'GRAD' 0, 'opsz' 20;
+}
+
+.restaurant-favorite-btn.active .material-symbols-outlined {
+  font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 20;
+}
+
+.restaurant-favorite-btn:hover {
+  background: rgba(229, 62, 62, 0.1);
+}
+
+.restaurant-kebab-btn {
+  color: var(--text-secondary);
+}
+
+.restaurant-kebab-btn .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.restaurant-kebab-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+.restaurant-menu-wrap {
+  position: relative;
+}
+
+.restaurant-action-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 20;
+  min-width: 128px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(0,0,0,0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.14s, visibility 0.14s;
+}
+
+.restaurant-action-menu.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.restaurant-action-menu button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.restaurant-action-menu button:hover {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+.restaurant-action-menu .danger-menu-item {
+  color: var(--danger);
+}
+
+.restaurant-action-menu .danger-menu-item:hover {
+  background: rgba(229, 62, 62, 0.1);
+  color: var(--danger);
+}
+
+.restaurant-location {
+  overflow-wrap: anywhere;
+}
+
+.restaurant-visits {
+  margin-top: auto;
+}
+
+.restaurant-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.restaurant-card-actions .small-btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.restaurant-card-editing {
+  aspect-ratio: auto;
+  min-height: 0;
+}
+
+.restaurant-edit-form,
+.restaurant-edit-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.restaurant-edit-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 980px) {
+  .restaurant-list-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-control select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .restaurant-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .restaurant-card {
+    min-height: 255px;
+    padding: 13px;
+  }
+}
+
+@media (max-width: 560px) {
+  .restaurant-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .restaurant-card {
+    min-height: 0;
+    padding: 13px;
+  }
+}
+
+/* Household name and planner view refinements */
+.household-name-form {
+  margin-top: 14px;
+}
+
+.planner-toolbar {
+  align-items: flex-start;
+}
+
+.planner-toolbar-copy {
+  min-width: 220px;
+}
+
+.planner-controls {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.planner-control {
+  display: grid;
+  gap: 5px;
+  min-width: 138px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.planner-control select {
+  min-height: 34px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.planner-previous-toggle {
+  min-height: 34px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--white);
+  white-space: nowrap;
+}
+
+.daily-planner-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.full-calendar-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.full-calendar-weekday {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--brand-light);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.full-calendar-day {
+  aspect-ratio: auto;
+  min-height: 172px;
+}
+
+.full-calendar-day .calendar-day-header {
+  align-items: center;
+  padding-bottom: 8px;
+}
+
+.full-calendar-day .calendar-day-name {
+  font-size: 12px;
+}
+
+.full-calendar-day .calendar-meals {
+  max-height: 126px;
+}
+
+.meal-checkmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--green);
+  color: #000;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+@media (max-width: 1180px) {
+  .daily-planner-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .planner-controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planner-previous-toggle {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .daily-planner-grid,
+  .full-calendar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .full-calendar-weekday {
+    display: none;
+  }
+
+  .full-calendar-day {
+    min-height: 245px;
+  }
+}
+
+@media (max-width: 620px) {
+  .planner-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Planner refinements: current day, custom meal fields, and favorite meal picker */
+.calendar-day.today {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand-border), 0 12px 30px rgba(75, 19, 240, 0.12);
+}
+
+.calendar-day.today .calendar-day-name::after {
+  content: 'Today';
+  display: inline-flex;
+  margin-left: 7px;
+  padding: 3px 7px;
+  border-radius: 9999px;
+  background: var(--brand-light);
+  color: var(--brand);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.meal-checkmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--brand);
+  border-radius: 5px;
+  background: var(--brand);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.custom-meal-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.custom-side-section {
+  display: grid;
+  gap: 7px;
+}
+
+.custom-side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.custom-side-list {
+  display: grid;
+  gap: 7px;
+}
+
+.custom-side-row {
+  display: grid;
+  grid-template-columns: minmax(68px, 0.35fr) minmax(0, 1fr) 32px;
+  gap: 7px;
+  align-items: center;
+}
+
+.custom-side-remove {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  color: var(--danger);
+}
+
+.custom-favorite-toggle {
+  padding: 8px 0 0;
+}
+
+.custom-meal-details {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.favorite-meal-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 104px 16px 24px;
+  background: rgba(0, 0, 0, 0.34);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.favorite-meal-modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.favorite-meal-modal-card {
+  width: min(390px, 100%);
+  max-height: min(620px, calc(100dvh - 128px));
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--modal-radius);
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  transform: translateY(-8px) scale(0.98);
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.favorite-meal-modal-overlay.open .favorite-meal-modal-card {
+  transform: translateY(0) scale(1);
+}
+
+.favorite-meal-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(470px, calc(100dvh - 250px));
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.favorite-meal-option {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+  text-align: left;
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
+}
+
+.favorite-meal-option strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.favorite-meal-option span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.favorite-meal-option:hover {
+  border-color: var(--brand);
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+@media (max-width: 780px) {
+  .favorite-meal-modal-overlay {
+    align-items: flex-end;
+    padding: 16px 12px;
+  }
+
+  .favorite-meal-modal-card {
+    width: 100%;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 32px);
+  }
+
+  .favorite-meal-list {
+    max-height: calc(100dvh - 180px);
+  }
+
+  .custom-side-row {
+    grid-template-columns: 74px minmax(0, 1fr) 32px;
+  }
+}
