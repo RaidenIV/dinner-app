@@ -1,4 +1,5 @@
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
+const restaurantCuisineOptions = ['American', 'Mexican', 'BBQ', 'Chinese', 'Korean', 'Japanese', 'German', 'Italian', 'Asian'];
 const accentColorOptions = ['#4A13F0', '#F0134A', '#B913F0', '#F0B913', '#4AF013'];
 const defaultAccentColor = '#4A13F0';
 const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
@@ -1372,7 +1373,7 @@ function renderRestaurants() {
         <h3>Add Restaurant</h3>
         <div class="form-grid">
           <label>Name<input name="name" required placeholder="Favorite taco spot" /></label>
-          <label>Cuisine<input name="cuisine" placeholder="Mexican, Pizza, Sushi" /></label>
+          ${restaurantCuisinePicker('', 'add-restaurant')}
           <label>Price<select name="priceLevel"><option>$</option><option selected>$$</option><option>$$$</option><option>$$$$</option></select></label>
           <label>Rating<select name="rating">${ratingOptions()}</select></label>
           <label class="wide">Location or Link<input name="location" placeholder="Address, Google Maps, DoorDash link" /></label>
@@ -1388,18 +1389,29 @@ function renderRestaurants() {
             <h3>Random Restaurant Selector</h3>
             <p class="muted">Set your filters and spin for dinner.</p>
           </div>
-          <span class="slot-machine-light" aria-hidden="true"></span>
         </div>
         <form id="random-restaurant-form" class="slot-machine-form">
-          <label class="slot-price-control">Max Price
-            <select name="maxPrice">
-              <option value="">Any</option>
-              <option value="$">$</option>
-              <option value="$$">$$</option>
-              <option value="$$$">$$$</option>
-              <option value="$$$$">$$$$</option>
-            </select>
-          </label>
+          <div class="slot-select-stack">
+            <label class="slot-select-control">Max Price
+              <select name="maxPrice">
+                <option value="">Any</option>
+                <option value="$">$</option>
+                <option value="$$">$$</option>
+                <option value="$$$">$$$</option>
+                <option value="$$$$">$$$$</option>
+              </select>
+            </label>
+            <label class="slot-select-control">Minimum Rating
+              <select name="minRating">
+                <option value="0">Any</option>
+                <option value="1">★+</option>
+                <option value="2">★★+</option>
+                <option value="3">★★★+</option>
+                <option value="4">★★★★+</option>
+                <option value="5">★★★★★</option>
+              </select>
+            </label>
+          </div>
           ${restaurantRandomFilterGroups()}
           <button class="primary slot-spin-btn" type="submit">Spin</button>
         </form>
@@ -1431,6 +1443,7 @@ function renderRestaurants() {
     const formElement = event.currentTarget;
     await withSaveFeedback(formElement, async () => {
       const body = formToBody(formElement);
+      body.cuisine = collectRestaurantCuisines(formElement);
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
       await api('/api/restaurants', { method: 'POST', body });
       formElement.reset();
@@ -1506,6 +1519,7 @@ function renderRestaurants() {
       const restaurantId = formElement.dataset.restaurantEditForm;
       await withSaveFeedback(formElement, async () => {
         const body = formToBody(formElement);
+        body.cuisine = collectRestaurantCuisines(formElement);
         body.favorite = getFormCheckboxChecked(formElement, 'favorite');
         await api(`/api/restaurants/${restaurantId}`, { method: 'PUT', body });
         state.editingRestaurantId = '';
@@ -1937,21 +1951,49 @@ function recipeItem(recipe) {
 }
 
 
-function restaurantRandomFilterGroups() {
-  const cuisineValues = [...new Set(state.restaurants.map(restaurant => String(restaurant.cuisine || '').trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
+function getRestaurantCuisineList(value) {
+  return String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function collectRestaurantCuisines(form) {
+  const selected = [...form.querySelectorAll('[data-restaurant-cuisine-option]:checked')]
+    .map(input => input.value)
+    .filter(Boolean);
+  return [...new Set(selected)].join(', ');
+}
+
+function restaurantCuisinePicker(selectedValue = '', idPrefix = 'restaurant') {
+  const selected = new Set(getRestaurantCuisineList(selectedValue).map(value => value.toLowerCase()));
+  return `
+    <fieldset class="restaurant-cuisine-field wide">
+      <legend>Cuisine</legend>
+      <input type="hidden" name="cuisine" value="${escapeAttr(getRestaurantCuisineList(selectedValue).join(', '))}" />
+      <div class="restaurant-cuisine-options">
+        ${restaurantCuisineOptions.map(cuisine => {
+          const id = `${idPrefix}-cuisine-${slugify(cuisine)}`;
+          const checked = selected.has(cuisine.toLowerCase()) ? 'checked' : '';
+          return `
+            <label class="restaurant-cuisine-option" for="${escapeAttr(id)}">
+              <input id="${escapeAttr(id)}" type="checkbox" value="${escapeAttr(cuisine)}" data-restaurant-cuisine-option ${checked} />
+              <span>${escapeHtml(cuisine)}</span>
+            </label>
+          `;
+        }).join('')}
+      </div>
+    </fieldset>
+  `;
+}
+
+function restaurantRandomFilterGroups() {
   return `
     <div class="slot-filter-group">
       <span class="slot-filter-label">Cuisine</span>
       <div class="slot-checkbox-grid">
-        ${cuisineValues.length ? cuisineValues.map(cuisine => slotCheckbox('cuisines', cuisine, cuisine)).join('') : '<span class="muted">Add cuisines to restaurants to filter by type.</span>'}
-      </div>
-    </div>
-    <div class="slot-filter-group">
-      <span class="slot-filter-label">Rating</span>
-      <div class="slot-checkbox-grid compact">
-        ${[1, 2, 3, 4, 5].map(rating => slotCheckbox('ratings', String(rating), '★'.repeat(rating), `${rating} star${rating === 1 ? '' : 's'}`)).join('')}
+        ${restaurantCuisineOptions.map(cuisine => slotCheckbox('cuisines', cuisine, cuisine)).join('')}
       </div>
     </div>
     <div class="slot-filter-group single">
@@ -1984,8 +2026,8 @@ function getRandomRestaurantFilters(form) {
   const formData = new FormData(form);
   return {
     maxPrice: String(formData.get('maxPrice') || ''),
+    minRating: Number(formData.get('minRating') || 0),
     cuisines: formData.getAll('cuisines').map(value => String(value).toLowerCase()),
-    ratings: formData.getAll('ratings').map(value => Number(value)).filter(Boolean),
     favoriteOnly: formData.get('favoriteOnly') === '1'
   };
 }
@@ -1994,12 +2036,12 @@ function getFilteredRandomRestaurants(filters) {
   const maxPriceRank = filters.maxPrice ? filters.maxPrice.length : Infinity;
   return state.restaurants.filter(restaurant => {
     const priceRank = String(restaurant.priceLevel || '$$').length;
-    const cuisine = String(restaurant.cuisine || '').toLowerCase();
-    const roundedRating = Math.max(0, Math.min(5, Math.round(Number(restaurant.rating || 0))));
+    const cuisines = getRestaurantCuisineList(restaurant.cuisine).map(value => value.toLowerCase());
+    const rating = Number(restaurant.rating || 0);
 
     if (priceRank > maxPriceRank) return false;
-    if (filters.cuisines.length && !filters.cuisines.includes(cuisine)) return false;
-    if (filters.ratings.length && !filters.ratings.includes(roundedRating)) return false;
+    if (filters.minRating && rating < filters.minRating) return false;
+    if (filters.cuisines.length && !filters.cuisines.some(cuisine => cuisines.includes(cuisine))) return false;
     if (filters.favoriteOnly && !restaurant.favorite) return false;
     return true;
   });
@@ -2169,7 +2211,7 @@ function restaurantEditCard(restaurant) {
         <h3>Edit Restaurant</h3>
         <div class="form-grid restaurant-edit-grid">
           <label>Name<input name="name" required value="${escapeAttr(restaurant.name || '')}" /></label>
-          <label>Cuisine<input name="cuisine" value="${escapeAttr(restaurant.cuisine || '')}" /></label>
+          ${restaurantCuisinePicker(restaurant.cuisine || '', `edit-restaurant-${restaurant._id}`)}
           <label>Price<select name="priceLevel">${['$', '$$', '$$$', '$$$$'].map(value => option(value, value, restaurant.priceLevel || '$$')).join('')}</select></label>
           <label>Rating<select name="rating">${ratingOptions(restaurant.rating || 0)}</select></label>
           <label class="wide">Location or Link<input name="location" value="${escapeAttr(restaurant.location || '')}" /></label>

@@ -4102,3 +4102,138 @@ body.mobile-drawer-open .panel-edge-toggle {
     flex-direction: column;
   }
 }
+
+/* Current request: restaurant cuisine options and random selector refinements */
+.restaurant-cuisine-field {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  border: 0;
+  padding: 0;
+}
+
+.restaurant-cuisine-field legend {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 1px;
+}
+
+.restaurant-cuisine-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.restaurant-cuisine-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 31px;
+  cursor: pointer;
+}
+
+.restaurant-cuisine-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.restaurant-cuisine-option span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 31px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.14s;
+}
+
+.restaurant-cuisine-option input:checked + span {
+  border-color: var(--brand-border);
+  background: var(--brand-light);
+  color: var(--brand);
+  transform: translateY(-1px);
+}
+
+.random-restaurant-card::before {
+  content: none;
+  display: none;
+}
+
+.slot-machine-light {
+  display: none;
+}
+
+.slot-select-stack {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.slot-select-control,
+.slot-price-control {
+  width: min(100%, 190px);
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.slot-select-control select,
+.slot-price-control select {
+  width: 100%;
+  min-width: 0;
+}
+
+.slot-machine-window {
+  background: var(--brand-light);
+}
+
+body,
+body *:not(input):not(textarea):not([contenteditable="true"]) {
+  cursor: default !important;
+}
+
+button,
+a,
+[role="button"],
+.nav-item,
+.calendar-add-btn,
+.restaurant-favorite-btn,
+.restaurant-kebab-btn,
+.meal-kebab-btn,
+.restaurant-action-menu button,
+.meal-action-menu button,
+.restaurant-cuisine-option,
+.restaurant-cuisine-option *,
+.slot-check,
+.slot-check *,
+input[type="checkbox"],
+input[type="radio"],
+select,
+label:has(input[type="checkbox"]),
+label:has(input[type="radio"]) {
+  cursor: pointer !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+textarea,
+[contenteditable="true"] {
+  cursor: text !important;
+}
+
+@media (max-width: 620px) {
+  .slot-select-control,
+  .slot-price-control {
+    width: min(100%, 170px);
+  }
+}
