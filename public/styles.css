@@ -3498,3 +3498,143 @@ body.mobile-drawer-open .panel-edge-toggle {
     padding: 13px;
   }
 }
+
+/* Household name and planner view refinements */
+.household-name-form {
+  margin-top: 14px;
+}
+
+.planner-toolbar {
+  align-items: flex-start;
+}
+
+.planner-toolbar-copy {
+  min-width: 220px;
+}
+
+.planner-controls {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.planner-control {
+  display: grid;
+  gap: 5px;
+  min-width: 138px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.planner-control select {
+  min-height: 34px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.planner-previous-toggle {
+  min-height: 34px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--white);
+  white-space: nowrap;
+}
+
+.daily-planner-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.full-calendar-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.full-calendar-weekday {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--brand-light);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.full-calendar-day {
+  aspect-ratio: auto;
+  min-height: 172px;
+}
+
+.full-calendar-day .calendar-day-header {
+  align-items: center;
+  padding-bottom: 8px;
+}
+
+.full-calendar-day .calendar-day-name {
+  font-size: 12px;
+}
+
+.full-calendar-day .calendar-meals {
+  max-height: 126px;
+}
+
+.meal-checkmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--green);
+  color: #000;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+@media (max-width: 1180px) {
+  .daily-planner-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .planner-controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planner-previous-toggle {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .daily-planner-grid,
+  .full-calendar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .full-calendar-weekday {
+    display: none;
+  }
+
+  .full-calendar-day {
+    min-height: 245px;
+  }
+}
+
+@media (max-width: 620px) {
+  .planner-controls {
+    grid-template-columns: 1fr;
+  }
+}

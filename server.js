@@ -280,12 +280,15 @@ function parseIngredientLines(textOrArray) {
     .filter(item => item.name);
 }
 
-function getDateRange(weekStart) {
+function getDateRange(weekStart, days = 7) {
   const start = new Date(`${weekStart}T00:00:00.000Z`);
   if (Number.isNaN(start.getTime())) {
     throw new Error('Invalid weekStart date. Use YYYY-MM-DD.');
   }
-  return Array.from({ length: 7 }, (_, i) => {
+
+  const requestedDays = Number.parseInt(days, 10) || 7;
+  const safeDays = Math.min(42, Math.max(1, requestedDays));
+  return Array.from({ length: safeDays }, (_, i) => {
     const date = new Date(start);
     date.setUTCDate(start.getUTCDate() + i);
     return date.toISOString().slice(0, 10);
@@ -296,8 +299,7 @@ function startOfCurrentWeek() {
   const now = new Date();
   const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const day = date.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setUTCDate(date.getUTCDate() + diff);
+  date.setUTCDate(date.getUTCDate() - day);
   return date.toISOString().slice(0, 10);
 }
 
@@ -627,7 +629,12 @@ app.post('/api/household/join', authenticate, async (req, res) => {
 
 app.patch('/api/household', authenticate, async (req, res) => {
   const update = {};
-  if (req.body.name) update.name = String(req.body.name).trim();
+  if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Household name is required.' });
+    update.name = name.slice(0, 80);
+  }
+
   const household = await Household.findByIdAndUpdate(req.householdId, update, { new: true }).lean();
   broadcastHouseholdUpdate(req, 'household:updated');
   res.json(household);
@@ -790,7 +797,7 @@ app.get('/api/restaurants/random', authenticate, async (req, res) => {
 app.get('/api/planner', authenticate, async (req, res) => {
   try {
     const weekStart = req.query.weekStart || startOfCurrentWeek();
-    const dates = getDateRange(weekStart);
+    const dates = getDateRange(weekStart, req.query.days);
     const plans = await MealPlan.find({ householdId: req.householdId, date: { $in: dates } }).lean();
     res.json({ weekStart, dates, plans });
   } catch (error) {
@@ -887,7 +894,7 @@ app.post('/api/grocery/clear-checked', authenticate, async (req, res) => {
 app.post('/api/grocery/generate-from-plan', authenticate, async (req, res) => {
   try {
     const weekStart = req.body.weekStart || startOfCurrentWeek();
-    const dates = getDateRange(weekStart);
+    const dates = getDateRange(weekStart, req.body.days);
     const plans = await MealPlan.find({ householdId: req.householdId, date: { $in: dates }, sourceType: 'recipe', sourceId: { $ne: null } }).lean();
     const recipeIds = [...new Set(plans.map(plan => String(plan.sourceId)))];
     const recipes = await Recipe.find({ householdId: req.householdId, _id: { $in: recipeIds } }).lean();

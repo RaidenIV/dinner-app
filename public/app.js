@@ -12,6 +12,9 @@ const state = {
   household: null,
   page: 'planner',
   weekStart: startOfWeek(new Date()),
+  plannerView: localStorage.getItem('mealPlannerView') || '2weeks',
+  plannerDisplay: localStorage.getItem('mealPlannerDisplay') || 'cards',
+  plannerPreviousWeek: localStorage.getItem('mealPlannerPreviousWeek') === '1',
   recipes: [],
   restaurants: [],
   planner: { dates: [], plans: [] },
@@ -310,7 +313,11 @@ async function loadRestaurants() {
 }
 
 async function loadPlanner() {
-  state.planner = await api(`/api/planner?weekStart=${state.weekStart}`);
+  const query = new URLSearchParams({
+    weekStart: getPlannerRangeStart(),
+    days: String(getPlannerDisplayDays())
+  }).toString();
+  state.planner = await api(`/api/planner?${query}`);
 }
 
 async function loadGrocery() {
@@ -396,58 +403,90 @@ function renderPlanner() {
     return (mealOrder.get(a.mealType) ?? 99) - (mealOrder.get(b.mealType) ?? 99);
   });
   const plansByDate = groupBy(sortedPlans, plan => plan.date);
+  const fullCalendar = state.plannerDisplay === 'full-calendar';
+  const rangeLabel = getPlannerRangeLabel();
 
   pageRoot.innerHTML = `
     <section class="form-card planner-toolbar">
-      <div>
-        <h3>Weekly Planner</h3>
-        <p class="muted">Use the calendar to add breakfast, lunch, or dinner for each day.</p>
+      <div class="planner-toolbar-copy">
+        <h3>Meal Planner</h3>
+        <p class="muted">${escapeHtml(rangeLabel)} · Sunday-first planning for breakfast, lunch, and dinner.</p>
+      </div>
+      <div class="planner-controls" aria-label="Planner display controls">
+        <label class="planner-control">Range
+          <select id="planner-view-select">
+            ${option('1week', '1 Week', state.plannerView)}
+            ${option('2weeks', '2 Weeks', state.plannerView)}
+            ${option('3weeks', '3 Weeks', state.plannerView)}
+            ${option('month', 'Month', state.plannerView)}
+          </select>
+        </label>
+        <label class="planner-control">Display
+          <select id="planner-display-select">
+            ${option('cards', 'Daily Cards', state.plannerDisplay)}
+            ${option('full-calendar', 'Full Calendar', state.plannerDisplay)}
+          </select>
+        </label>
+        <label class="checkbox-line planner-previous-toggle">
+          <input id="planner-previous-week" type="checkbox" ${state.plannerPreviousWeek ? 'checked' : ''} /> Previous Week
+        </label>
       </div>
       <div class="toolbar">
         <button class="secondary" id="prev-week">Previous</button>
-        <button class="ghost" id="this-week">This Week</button>
+        <button class="ghost" id="this-week">Current</button>
         <button class="secondary" id="next-week">Next</button>
         <button class="primary" id="generate-grocery">Generate Grocery List</button>
       </div>
     </section>
-    <section class="calendar-grid" aria-label="Weekly meal calendar">
-      ${state.planner.dates.map(date => `
-        <article class="calendar-day" data-date="${date}">
-          <header class="calendar-day-header">
-            <div>
-              <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
-              <span class="calendar-day-date">${plannerDateFormatter.format(new Date(`${date}T12:00:00`))}</span>
-            </div>
-            <button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>
-          </header>
-          <div class="calendar-meals">
-            ${(plansByDate[date] || []).length ? plansByDate[date].map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
-          </div>
-        </article>
-      `).join('')}
+    <section class="calendar-grid ${fullCalendar ? 'full-calendar-grid' : 'daily-planner-grid'}" aria-label="${fullCalendar ? 'Full meal calendar' : 'Daily meal planner'}">
+      ${fullCalendar ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => `<div class="full-calendar-weekday">${day}</div>`).join('') : ''}
+      ${state.planner.dates.map(date => plannerDayCard(date, plansByDate[date] || [], fullCalendar)).join('')}
     </section>
   `;
 
   $('#prev-week').addEventListener('click', async () => {
-    state.weekStart = addDays(state.weekStart, -7);
+    movePlannerPeriod(-1);
     await loadPlanner();
     renderPlanner();
   });
 
   $('#next-week').addEventListener('click', async () => {
-    state.weekStart = addDays(state.weekStart, 7);
+    movePlannerPeriod(1);
     await loadPlanner();
     renderPlanner();
   });
 
   $('#this-week').addEventListener('click', async () => {
     state.weekStart = startOfWeek(new Date());
+    state.plannerPreviousWeek = false;
+    localStorage.setItem('mealPlannerPreviousWeek', '0');
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#planner-view-select')?.addEventListener('change', async event => {
+    state.plannerView = event.currentTarget.value;
+    localStorage.setItem('mealPlannerView', state.plannerView);
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#planner-display-select')?.addEventListener('change', async event => {
+    state.plannerDisplay = event.currentTarget.value;
+    localStorage.setItem('mealPlannerDisplay', state.plannerDisplay);
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#planner-previous-week')?.addEventListener('change', async event => {
+    state.plannerPreviousWeek = event.currentTarget.checked;
+    localStorage.setItem('mealPlannerPreviousWeek', state.plannerPreviousWeek ? '1' : '0');
     await loadPlanner();
     renderPlanner();
   });
 
   $('#generate-grocery').addEventListener('click', async () => {
-    const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: state.weekStart } });
+    const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: getPlannerRangeStart(), days: getPlannerDisplayDays() } });
     await loadGrocery();
     showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
   });
@@ -482,6 +521,23 @@ function renderPlanner() {
       renderPlanner();
     });
   });
+}
+
+function plannerDayCard(date, plans, fullCalendar = false) {
+  return `
+    <article class="calendar-day ${fullCalendar ? 'full-calendar-day' : ''}" data-date="${date}">
+      <header class="calendar-day-header">
+        <div>
+          <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
+          <span class="calendar-day-date">${plannerDateFormatter.format(new Date(`${date}T12:00:00`))}</span>
+        </div>
+        <button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>
+      </header>
+      <div class="calendar-meals">
+        ${plans.length ? plans.map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
+      </div>
+    </article>
+  `;
 }
 
 function openCalendarMealForm(date, plan = null) {
@@ -691,7 +747,7 @@ function plannerMealItem(plan) {
         </div>
       </div>
       <div class="calendar-meal-actions">
-        <span class="badge ${plan.status === 'eaten' ? 'good' : plan.status === 'skipped' ? 'warn' : ''}">${escapeHtml(plan.status)}</span>
+        ${plannerStatusMarkup(plan.status)}
       </div>
     </article>
   `;
@@ -1257,7 +1313,7 @@ function renderGrocery() {
   });
 
   $('#generate-grocery-here').addEventListener('click', async () => {
-    const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: state.weekStart } });
+    const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: getPlannerRangeStart(), days: getPlannerDisplayDays() } });
     await Promise.all([loadGrocery(), loadStats()]);
     showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
     renderGrocery();
@@ -1402,7 +1458,10 @@ async function renderSettings() {
           <div class="kpi invite-code" aria-label="Household invite code">${formatInviteCode(data.household.inviteCode)}</div>
           <button class="secondary copy-invite-btn" type="button" data-copy-invite="${escapeHtml(String(data.household.inviteCode || '').toUpperCase())}"><i class="ti ti-copy"></i>Copy</button>
         </div>
-        <p>${escapeHtml(data.household.name)}</p>
+        <form id="household-name-form" class="invite-form household-name-form">
+          <label>Household Name<input name="name" type="text" maxlength="80" required value="${escapeAttr(data.household.name || '')}" /></label>
+          <button class="secondary full" type="submit"><i class="ti ti-home-edit"></i>Save Household Name</button>
+        </form>
       </article>
       <article class="card">
         <h3>Email Invite</h3>
@@ -1518,6 +1577,19 @@ async function renderSettings() {
     } catch (error) {
       showToast('Unable to copy invite code.');
     }
+  });
+
+  pageRoot.querySelector('#household-name-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await withSaveFeedback(form, async () => {
+      const name = String(new FormData(form).get('name') || '').trim();
+      if (!name) throw new Error('Enter a household name.');
+      const household = await api('/api/household', { method: 'PATCH', body: { name } });
+      state.household = household;
+      $('#household-name').textContent = household?.name || 'Meal Planner';
+      await renderSettings();
+    }, 'Household name updated.');
   });
 
   pageRoot.querySelector('#email-invite-form')?.addEventListener('submit', async event => {
@@ -1813,6 +1885,53 @@ function titleCase(value) {
   return String(value || '').replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
+
+function getPlannerDisplayDays() {
+  if (state.plannerView === '1week') return 7;
+  if (state.plannerView === '3weeks') return 21;
+  if (state.plannerView === 'month') return 42;
+  return 14;
+}
+
+function getPlannerRangeStart() {
+  const baseStart = state.plannerPreviousWeek ? addDays(state.weekStart, -7) : state.weekStart;
+  if (state.plannerView === 'month') return startOfMonthGrid(baseStart);
+  return baseStart;
+}
+
+function getPlannerRangeLabel() {
+  const dates = state.planner?.dates || [];
+  if (!dates.length) return 'No dates loaded';
+  const start = plannerDateFormatter.format(new Date(`${dates[0]}T12:00:00`));
+  const end = plannerDateFormatter.format(new Date(`${dates[dates.length - 1]}T12:00:00`));
+  return `${start} – ${end}`;
+}
+
+function startOfMonthGrid(isoDate) {
+  const date = new Date(`${isoDate}T12:00:00`);
+  const first = new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0);
+  return startOfWeek(first);
+}
+
+function movePlannerPeriod(direction) {
+  if (state.plannerView === 'month') {
+    state.weekStart = addMonths(state.weekStart, direction);
+    return;
+  }
+  state.weekStart = addDays(state.weekStart, direction * getPlannerDisplayDays());
+}
+
+function addMonths(isoDate, months) {
+  const date = new Date(`${isoDate}T12:00:00`);
+  date.setMonth(date.getMonth() + months);
+  return startOfWeek(date);
+}
+
+function plannerStatusMarkup(status) {
+  if (status === 'eaten') return '<span class="meal-checkmark" aria-label="Eaten" title="Eaten">✓</span>';
+  return `<span class="badge ${status === 'skipped' ? 'warn' : ''}">${escapeHtml(status || 'planned')}</span>`;
+}
+
 function dateISO(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
@@ -1820,8 +1939,7 @@ function dateISO(date) {
 function startOfWeek(date) {
   const copy = new Date(date);
   const day = copy.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  copy.setDate(copy.getDate() + diff);
+  copy.setDate(copy.getDate() - day);
   return dateISO(copy);
 }
 
