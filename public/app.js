@@ -1254,6 +1254,14 @@ async function renderSettings() {
         </div>
       </article>
       <article class="card">
+        <h3>Join Household</h3>
+        <p class="muted">Already have an account? Enter an invite code here to switch this account into another shared household.</p>
+        <form id="join-household-form" class="invite-form">
+          <label>Invite Code<input name="inviteCode" type="text" placeholder="Enter household invite code" autocomplete="off" required /></label>
+          <button class="secondary full" type="submit"><i class="ti ti-users-plus"></i>Join Household</button>
+        </form>
+      </article>
+      <article class="card">
         <h3>Accent Color</h3>
         <p class="muted">Choose the app accent color for buttons, badges, navigation, and highlights.</p>
         <div class="accent-picker" aria-label="Accent color options">
@@ -1354,6 +1362,30 @@ async function renderSettings() {
       window.setTimeout(() => { window.location.href = mailto; }, 180);
       await renderSettings();
     }, 'Invite ready.');
+  });
+
+  pageRoot.querySelector('#join-household-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const inviteCode = String(new FormData(form).get('inviteCode') || '').trim().toUpperCase();
+    if (!inviteCode) {
+      showToast('Enter an invite code.');
+      return;
+    }
+
+    const currentHouseholdName = state.household?.name || data.household?.name || 'your current household';
+    const confirmed = window.confirm(`Joining another household will switch this account out of ${currentHouseholdName}. Continue?`);
+    if (!confirmed) return;
+
+    await withSaveFeedback(form, async () => {
+      const result = await api('/api/household/join', { method: 'POST', body: { inviteCode } });
+      state.user = result.user;
+      state.household = result.household;
+      $('#household-name').textContent = result.household?.name || 'Meal Planner';
+      syncUserAvatarUI();
+      await loadBaseData();
+      await renderSettings();
+    }, 'Joined household.');
   });
 
   pageRoot.querySelector('.theme-toggle')?.addEventListener('click', () => {

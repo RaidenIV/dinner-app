@@ -531,6 +531,48 @@ app.post('/api/household/invites', authenticate, async (req, res) => {
   }
 });
 
+app.post('/api/household/join', authenticate, async (req, res) => {
+  try {
+    const inviteCode = String(req.body.inviteCode || '').trim().toUpperCase();
+    if (!inviteCode) {
+      return res.status(400).json({ error: 'Invite code is required.' });
+    }
+
+    const household = await Household.findOne({ inviteCode });
+    if (!household) {
+      return res.status(404).json({ error: 'Invite code was not found.' });
+    }
+
+    if (String(req.user.householdId) === String(household._id)) {
+      return res.status(409).json({ error: 'You are already in this household.' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { householdId: household._id, role: 'member' } },
+      { new: true, runValidators: true }
+    );
+    if (!updatedUser) return res.status(404).json({ error: 'User not found.' });
+
+    await HouseholdInvite.findOneAndUpdate(
+      { householdId: household._id, email: req.user.email },
+      {
+        $set: {
+          email: req.user.email,
+          inviteCode: household.inviteCode,
+          status: 'accepted',
+          acceptedAt: new Date()
+        }
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ user: publicUser(updatedUser), household: household.toObject() });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to join household.' });
+  }
+});
+
 app.patch('/api/household', authenticate, async (req, res) => {
   const update = {};
   if (req.body.name) update.name = String(req.body.name).trim();
