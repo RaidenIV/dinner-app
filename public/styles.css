@@ -5160,3 +5160,132 @@ body > .slot-tag-modal .slot-tag-modal-card {
     backdrop-filter: blur(20px) saturate(140%);
   }
 }
+
+
+/* Current request: auth AIGOX mark and accent-colored random restaurant selector */
+.auth-developer-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(75, 19, 240, 0.12);
+}
+
+.auth-developer-logo img {
+  display: block;
+  width: 92px;
+  height: auto;
+  opacity: 0.68;
+  filter: brightness(0) saturate(100%);
+}
+
+.random-restaurant-card {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--white);
+  box-shadow: 0 16px 34px rgba(74, 19, 240, 0.18);
+}
+
+.random-restaurant-card::before {
+  content: none !important;
+  display: none !important;
+}
+
+.random-restaurant-card h3,
+.random-restaurant-card h4,
+.random-restaurant-card strong,
+.random-restaurant-card p,
+.random-restaurant-card .muted,
+.random-restaurant-card .slot-filter-label,
+.random-restaurant-card .slot-select-control,
+.random-restaurant-card .slot-price-control,
+.random-restaurant-card .slot-native-check,
+.random-restaurant-card .slot-machine-hint {
+  color: var(--white);
+}
+
+.random-restaurant-card .slot-select-control select,
+.random-restaurant-card .slot-price-control select {
+  background-color: var(--white);
+  border-color: rgba(255, 255, 255, 0.72);
+  color: var(--text-primary);
+}
+
+.random-restaurant-card .slot-select-control select:focus,
+.random-restaurant-card .slot-price-control select:focus {
+  border-color: var(--white);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
+}
+
+.random-restaurant-card .slot-check span {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.36);
+  color: var(--white);
+  box-shadow: none;
+}
+
+.random-restaurant-card .slot-check input:checked + span {
+  background: var(--white);
+  border-color: var(--white);
+  color: var(--brand);
+  box-shadow: 0 6px 16px rgba(25, 0, 92, 0.2);
+}
+
+.random-restaurant-card .slot-native-check input {
+  accent-color: var(--white);
+}
+
+.random-restaurant-card .slot-tag-trigger {
+  background: var(--white);
+  border-color: rgba(255, 255, 255, 0.72);
+  color: var(--brand);
+}
+
+.random-restaurant-card .slot-tag-trigger [data-tag-count] {
+  color: var(--brand);
+}
+
+.random-restaurant-card .slot-machine-window,
+.random-restaurant-card .slot-machine-window.settled {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.random-restaurant-card .slot-reel,
+.random-restaurant-card .slot-reel.winner {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.52);
+  color: var(--white);
+  box-shadow: 0 9px 24px rgba(25, 0, 92, 0.18), inset 0 -2px 0 rgba(255, 255, 255, 0.12);
+}
+
+.random-restaurant-card .slot-machine-trigger:hover,
+.random-restaurant-card .slot-machine-trigger:focus-visible {
+  border-color: var(--white);
+  box-shadow: 0 12px 28px rgba(25, 0, 92, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.random-restaurant-card .slot-pick-details .badge.accent {
+  background: var(--white);
+  border-color: var(--white);
+  color: var(--brand);
+}
+
+.random-restaurant-card .empty {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--white);
+}
+
+@media (max-width: 620px) {
+  .auth-developer-logo {
+    margin-top: 15px;
+    padding-top: 14px;
+  }
+
+  .auth-developer-logo img {
+    width: 82px;
+  }
+}

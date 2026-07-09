@@ -5,6 +5,7 @@ const defaultAccentColor = '#4A13F0';
 const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const plannerWeekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
 const plannerDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const plannerRangeDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' });
 const fullDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
 const state = {
@@ -572,7 +573,7 @@ function renderPlanner() {
     <section class="form-card planner-toolbar">
       <div class="planner-toolbar-copy">
         <h3>Meal Planner</h3>
-        <p class="muted">${escapeHtml(rangeLabel)} · Sunday-first planning for breakfast, lunch, and dinner.</p>
+        <p class="muted">${escapeHtml(rangeLabel)}</p>
       </div>
       <div class="planner-controls" aria-label="Planner display controls">
         <label class="planner-control">Range
@@ -2747,8 +2748,8 @@ function getPlannerRangeStart() {
 function getPlannerRangeLabel() {
   const dates = state.planner?.dates || [];
   if (!dates.length) return 'No dates loaded';
-  const start = plannerDateFormatter.format(new Date(`${dates[0]}T12:00:00`));
-  const end = plannerDateFormatter.format(new Date(`${dates[dates.length - 1]}T12:00:00`));
+  const start = plannerRangeDateFormatter.format(new Date(`${dates[0]}T12:00:00`));
+  const end = plannerRangeDateFormatter.format(new Date(`${dates[dates.length - 1]}T12:00:00`));
   return `${start} – ${end}`;
 }
 
