@@ -4699,3 +4699,130 @@ body > .slot-tag-modal .slot-tag-modal-card {
     grid-column: 1 / -1;
   }
 }
+
+/* Current request: remove magnetic nav, animated restaurant toggle, meal checkboxes, household button */
+.topnav-nav::before,
+#controlPanel.control-panel.topnav-nav::before,
+.control-panel.topnav-nav::before {
+  display: none !important;
+  opacity: 0 !important;
+}
+
+.household-banner-btn {
+  cursor: pointer;
+  appearance: none;
+  font-family: inherit;
+  transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.household-banner-btn:hover {
+  transform: translateY(-1px);
+  background: var(--brand-hover);
+  box-shadow: 0 10px 22px rgba(75, 19, 240, 0.16);
+}
+
+.household-banner-btn.hidden {
+  display: none !important;
+}
+
+.setting-card-pulse {
+  animation: settingCardPulse 0.9s ease;
+}
+
+@keyframes settingCardPulse {
+  0%, 100% { box-shadow: none; }
+  35% { box-shadow: 0 0 0 4px var(--brand-border), 0 14px 34px rgba(75, 19, 240, 0.16); }
+}
+
+.restaurant-list-head {
+  align-items: center;
+}
+
+.restaurant-view-toggle {
+  position: relative;
+  isolation: isolate;
+  min-width: 168px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.restaurant-view-toggle::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: 7px;
+  background: var(--brand);
+  transform: translateX(0);
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 0;
+}
+
+.restaurant-view-toggle.want-active::before {
+  transform: translateX(100%);
+}
+
+.restaurant-view-toggle button {
+  position: relative;
+  z-index: 1;
+  width: 50%;
+}
+
+.restaurant-view-toggle button.active {
+  background: transparent !important;
+  color: #fff;
+}
+
+.calendar-meal-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.calendar-meal-name-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meal-eaten-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.meal-eaten-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.meal-eaten-toggle span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--brand);
+  border-radius: 5px;
+  background: var(--white);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease;
+}
+
+.meal-eaten-toggle input:checked + span {
+  background: var(--brand);
+  color: var(--white);
+}
+
+.meal-eaten-toggle:hover span {
+  transform: scale(1.06);
+}

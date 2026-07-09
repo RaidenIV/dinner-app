@@ -51,7 +51,6 @@ function init() {
   $('#today-label').textContent = fullDateFormatter.format(new Date());
   bindAuth();
   bindShell();
-  setupMagneticNav();
   bindTactileSounds();
   initializeMobileWebSidebar();
 
@@ -107,16 +106,17 @@ function bindShell() {
   $('#logout-btn')?.addEventListener('click', logout);
   $('#user-avatar-btn')?.addEventListener('click', async () => {
     closeMobileWebSidebarForModal();
-    state.page = 'settings';
-    setActiveNav('settings');
-    await renderCurrentPage();
+    await openSettingsPage('profile');
+  });
+
+  $('#household-banner-btn')?.addEventListener('click', async () => {
+    await openSettingsPage('household');
   });
 
   document.querySelectorAll('[data-page]').forEach(button => {
     button.addEventListener('click', async () => {
       state.page = button.dataset.page;
       document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
-      requestAnimationFrame(() => setNavHover(button));
       setMobileWebSidebarOpen(false);
       await renderCurrentPage();
     });
@@ -167,7 +167,6 @@ async function bootApp() {
   authScreen.classList.add('hidden');
   appShell.classList.remove('hidden');
   setActiveNav(state.page);
-  requestAnimationFrame(() => updateActiveNavHover());
   await loadBaseData();
   await renderCurrentPage();
 }
@@ -238,6 +237,22 @@ async function runRealtimeRefresh() {
   }
 }
 
+async function openSettingsPage(focusSection = '') {
+  state.page = 'settings';
+  setActiveNav('settings');
+  await renderCurrentPage();
+  if (focusSection === 'household') {
+    const card = document.querySelector('[data-settings-section="household"]');
+    card?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    card?.classList.add('setting-card-pulse');
+    setTimeout(() => card?.classList.remove('setting-card-pulse'), 900);
+  }
+  if (focusSection === 'profile') {
+    const card = document.querySelector('[data-settings-section="profile"]');
+    card?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }
+}
+
 async function loadBaseData() {
   await Promise.all([
     loadRecipes(),
@@ -254,6 +269,7 @@ async function loadBaseData() {
 async function renderCurrentPage() {
   appShell.dataset.page = state.page;
   $('#page-title').textContent = titleCase(state.page === 'grocery' ? 'Grocery List' : state.page);
+  updateHouseholdBannerVisibility();
   if (state.page === 'dashboard') return renderDashboard();
   if (state.page === 'planner') return renderPlanner();
   if (state.page === 'recipes') return renderRecipes();
@@ -264,11 +280,17 @@ async function renderCurrentPage() {
   if (state.page === 'settings') return renderSettings();
 }
 
+function updateHouseholdBannerVisibility() {
+  const button = $('#household-banner-btn');
+  if (!button) return;
+  button.classList.toggle('hidden', state.page === 'settings');
+}
+
 function setActiveNav(page) {
   appShell.dataset.page = page;
   document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === page));
   $('#page-title').textContent = titleCase(page === 'grocery' ? 'Grocery List' : page);
-  requestAnimationFrame(() => updateActiveNavHover());
+  updateHouseholdBannerVisibility();
 }
 
 function getStoredToken() {
@@ -554,6 +576,39 @@ function renderPlanner() {
       const plan = state.planner.plans.find(planItem => String(planItem._id) === String(item.dataset.planItem));
       state.openPlannerMealMenuId = '';
       if (plan) openCalendarMealForm(plan.date, plan);
+    });
+  });
+
+
+  pageRoot.querySelectorAll('[data-toggle-plan-eaten]').forEach(input => {
+    input.addEventListener('click', event => event.stopPropagation());
+    input.addEventListener('change', async event => {
+      const plan = state.planner.plans.find(planItem => String(planItem._id) === String(input.dataset.togglePlanEaten));
+      if (!plan) return;
+      const nextStatus = input.checked ? 'eaten' : 'planned';
+      try {
+        await api('/api/planner/slot', {
+          method: 'PUT',
+          body: {
+            date: plan.date,
+            mealType: plan.mealType,
+            time: plan.time || '',
+            sourceType: plan.sourceType || 'custom',
+            sourceId: plan.sourceId || '',
+            customName: plan.customName || '',
+            customProtein: plan.customProtein || '',
+            customSides: plan.customSides || [],
+            status: nextStatus,
+            notes: plan.notes || ''
+          }
+        });
+        await Promise.all([loadPlanner(), loadHistory(), loadStats()]);
+        showToast(nextStatus === 'eaten' ? 'Meal marked eaten.' : 'Meal marked planned.');
+        renderPlanner();
+      } catch (error) {
+        input.checked = !input.checked;
+        showToast(error.message || 'Could not update meal status.');
+      }
     });
   });
 
@@ -996,7 +1051,13 @@ function plannerMealItem(plan) {
             <span class="badge accent">${escapeHtml(plan.mealType)}</span>
             ${plan.time ? `<span class="badge">${formatMealTime(plan.time)}</span>` : ''}
           </div>
-          <strong>${escapeHtml(getPlanName(plan))}</strong>
+          <div class="calendar-meal-name-row">
+            <strong>${escapeHtml(getPlanName(plan))}</strong>
+            <label class="meal-eaten-toggle" title="Mark meal eaten">
+              <input type="checkbox" data-toggle-plan-eaten="${plan._id}" ${plan.status === 'eaten' ? 'checked' : ''} />
+              <span>${plan.status === 'eaten' ? '✓' : ''}</span>
+            </label>
+          </div>
           ${customMealDetailsMarkup(plan)}
           ${plan.notes ? `<p class="muted">${escapeHtml(plan.notes)}</p>` : ''}
         </div>
@@ -1010,7 +1071,7 @@ function plannerMealItem(plan) {
           </div>
         </div>
       </div>
-      ${plan.status && plan.status !== 'planned' ? `<div class="calendar-meal-actions">${plannerStatusMarkup(plan.status)}</div>` : ''}
+      ${plan.status === 'skipped' ? `<div class="calendar-meal-actions">${plannerStatusMarkup(plan.status)}</div>` : ''}
     </article>
   `;
 }
@@ -1395,7 +1456,7 @@ function renderRestaurants() {
           ${restaurantCuisinePicker('', 'add-restaurant')}
           <label>Price<select name="priceLevel"><option>$</option><option selected>$$</option><option>$$$</option><option>$$$$</option></select></label>
           <label>Rating<select name="rating">${ratingOptions()}</select></label>
-          <label class="wide">Address<input name="location" placeholder="Street address or area" /></label>
+          <label class="wide">Address<input name="location" placeholder="Street address or area" autocomplete="street-address" list="address-autocomplete-options" /></label>
           <label class="wide">Link<input name="link" type="url" placeholder="Website, menu, Google Maps, DoorDash link" /></label>
           <label>Favorite Dishes<input name="favoriteDishes" placeholder="wings, tacos, ramen" /></label>
           <label>Tags<input name="tags" placeholder="late night, cheap, delivery" /></label>
@@ -1450,6 +1511,7 @@ function renderRestaurants() {
           ${slotMachinePlaceholder()}
         </div>
       </article>
+      ${addressAutocompleteDatalist()}
     </section>
     <section class="card restaurant-list-section">
       <div class="section-head restaurant-list-head">
@@ -1458,7 +1520,7 @@ function renderRestaurants() {
           <p class="muted">${visibleCount} saved ${visibleCount === 1 ? 'spot' : 'spots'}</p>
         </div>
         <div class="restaurant-list-tools">
-          <div class="restaurant-view-toggle" role="group" aria-label="Restaurant list view">
+          <div class="restaurant-view-toggle ${showingWantToGo ? 'want-active' : 'saved-active'}" role="group" aria-label="Restaurant list view" data-restaurant-list-toggle>
             <button class="${showingWantToGo ? '' : 'active'}" type="button" data-restaurant-list-view="saved">Saved</button>
             <button class="${showingWantToGo ? 'active' : ''}" type="button" data-restaurant-list-view="want">Want To</button>
           </div>
@@ -1508,14 +1570,14 @@ function renderRestaurants() {
   });
   bindSlotTagFilterModal(randomRestaurantForm);
 
-  pageRoot.querySelectorAll('[data-restaurant-list-view]').forEach(button => {
-    button.addEventListener('click', () => {
-      state.restaurantListView = button.dataset.restaurantListView === 'want' ? 'want' : 'saved';
-      localStorage.setItem('mealPlannerRestaurantListView', state.restaurantListView);
-      state.editingRestaurantId = '';
-      state.openRestaurantMenuId = '';
-      renderRestaurants();
-    });
+  pageRoot.querySelector('[data-restaurant-list-toggle]')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-restaurant-list-view]');
+    const nextView = button?.dataset.restaurantListView || (state.restaurantListView === 'want' ? 'saved' : 'want');
+    state.restaurantListView = nextView === 'want' ? 'want' : 'saved';
+    localStorage.setItem('mealPlannerRestaurantListView', state.restaurantListView);
+    state.editingRestaurantId = '';
+    state.openRestaurantMenuId = '';
+    renderRestaurants();
   });
 
   $('#restaurant-sort-select')?.addEventListener('change', event => {
@@ -1793,7 +1855,7 @@ async function renderSettings() {
           </div>
         </div>
       </article>
-      <article class="card">
+      <article class="card" data-settings-section="household">
         <h3>Household</h3>
         <p class="muted">Share this invite code with your wife or anyone else you want in the meal planner.</p>
         <div class="invite-code-row">
@@ -1802,7 +1864,7 @@ async function renderSettings() {
         </div>
         <form id="household-name-form" class="invite-form household-name-form">
           <label>Household Name<input name="name" type="text" maxlength="80" required value="${escapeAttr(data.household.name || '')}" /></label>
-          <label>Home Address<input name="homeAddress" type="text" maxlength="220" placeholder="Street, city, state, ZIP" value="${escapeAttr(data.household.homeAddress || '')}" /></label>
+          <label>Home Address<input name="homeAddress" type="text" maxlength="220" placeholder="Street, city, state, ZIP" autocomplete="street-address" list="address-autocomplete-options" value="${escapeAttr(data.household.homeAddress || '')}" /></label>
           <p class="muted household-distance-help">Used to calculate approximate distance to saved restaurants.</p>
           <button class="secondary full" type="submit"><i class="ti ti-home-edit"></i>Save Household Details</button>
         </form>
@@ -1849,6 +1911,7 @@ async function renderSettings() {
         <p class="muted">Log out of this HomePlate account on this device.</p>
         <button id="settings-logout-btn" class="ghost logout-btn" type="button"><i class="ti ti-logout"></i>Log Out</button>
       </article>
+      ${addressAutocompleteDatalist()}
     </section>
   `;
 
@@ -1998,6 +2061,15 @@ function collectRestaurantCuisines(form) {
     .map(input => input.value)
     .filter(Boolean);
   return [...new Set(selected)].join(', ');
+}
+
+function addressAutocompleteDatalist() {
+  const addresses = [state.household?.homeAddress, ...state.restaurants.map(restaurant => restaurant.location)]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+  const unique = [...new Set(addresses)];
+  if (!unique.length) return '';
+  return `<datalist id="address-autocomplete-options">${unique.map(address => `<option value="${escapeAttr(address)}"></option>`).join('')}</datalist>`;
 }
 
 function restaurantCuisinePicker(selectedValue = '', idPrefix = 'restaurant') {
@@ -2419,7 +2491,7 @@ function restaurantEditCard(restaurant) {
           ${restaurantCuisinePicker(restaurant.cuisine || '', `edit-restaurant-${restaurant._id}`)}
           <label>Price<select name="priceLevel">${['$', '$$', '$$$', '$$$$'].map(value => option(value, value, restaurant.priceLevel || '$$')).join('')}</select></label>
           <label>Rating<select name="rating">${ratingOptions(restaurant.rating || 0)}</select></label>
-          <label class="wide">Address<input name="location" value="${escapeAttr(restaurant.location || '')}" /></label>
+          <label class="wide">Address<input name="location" value="${escapeAttr(restaurant.location || '')}" autocomplete="street-address" list="address-autocomplete-options" /></label>
           <label class="wide">Link<input name="link" type="url" value="${escapeAttr(restaurant.link || '')}" /></label>
           <label>Favorite Dishes<input name="favoriteDishes" value="${escapeAttr((restaurant.favoriteDishes || []).join(', '))}" /></label>
           <label>Tags<input name="tags" value="${escapeAttr((restaurant.tags || []).join(', '))}" /></label>
@@ -3013,6 +3085,7 @@ function initializeMobileWebSidebar() {
 }
 
 function setupMagneticNav() {
+  return;
   const navList = document.querySelector('.topnav-nav');
   const navLinks = [...document.querySelectorAll('.topnav-nav .nav-item')];
   if (!navList || !navLinks.length) return;
@@ -3050,6 +3123,7 @@ function setupMagneticNav() {
 }
 
 function setNavHover(link) {
+  return;
   if (isMobileWebSidebarViewport()) return;
   const navList = document.querySelector('.topnav-nav');
   if (!navList || !link || appShell.classList.contains('hidden')) return;
@@ -3064,6 +3138,7 @@ function setNavHover(link) {
 }
 
 function updateActiveNavHover() {
+  return;
   const active = document.querySelector('.topnav-nav .nav-item.active') || document.querySelector('.topnav-nav .nav-item');
   if (active) setNavHover(active);
 }
