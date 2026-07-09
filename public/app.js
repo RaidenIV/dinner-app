@@ -17,6 +17,10 @@ const state = {
   plannerView: localStorage.getItem('mealPlannerView') || '2weeks',
   plannerDisplay: localStorage.getItem('mealPlannerDisplay') || 'cards',
   plannerPreviousWeek: localStorage.getItem('mealPlannerPreviousWeek') === '1',
+  plannerCenterToday: localStorage.getItem('mealPlannerCenterToday') !== '0',
+  historyViewMode: localStorage.getItem('mealPlannerHistoryViewMode') || 'amount',
+  historyAmount: localStorage.getItem('mealPlannerHistoryAmount') || '5',
+  historyDays: localStorage.getItem('mealPlannerHistoryDays') || '30',
   recipes: [],
   restaurants: [],
   customMealFavorites: [],
@@ -593,6 +597,9 @@ function renderPlanner() {
         <label class="checkbox-line planner-previous-toggle">
           <input id="planner-previous-week" type="checkbox" ${state.plannerPreviousWeek ? 'checked' : ''} /> Previous Week
         </label>
+        <label class="checkbox-line planner-center-toggle ${fullCalendar ? 'is-disabled' : ''}" title="Keep today in the center position of the first seven-day row">
+          <input id="planner-center-today" type="checkbox" ${state.plannerCenterToday ? 'checked' : ''} ${fullCalendar ? 'disabled' : ''} /> Center Today
+        </label>
       </div>
       <div class="toolbar">
         <button class="secondary" id="prev-week">Previous</button>
@@ -608,12 +615,16 @@ function renderPlanner() {
   `;
 
   $('#prev-week').addEventListener('click', async () => {
+    state.plannerCenterToday = false;
+    localStorage.setItem('mealPlannerCenterToday', '0');
     movePlannerPeriod(-1);
     await loadPlanner();
     renderPlanner();
   });
 
   $('#next-week').addEventListener('click', async () => {
+    state.plannerCenterToday = false;
+    localStorage.setItem('mealPlannerCenterToday', '0');
     movePlannerPeriod(1);
     await loadPlanner();
     renderPlanner();
@@ -622,7 +633,9 @@ function renderPlanner() {
   $('#this-week').addEventListener('click', async () => {
     state.weekStart = startOfWeek(new Date());
     state.plannerPreviousWeek = false;
+    state.plannerCenterToday = true;
     localStorage.setItem('mealPlannerPreviousWeek', '0');
+    localStorage.setItem('mealPlannerCenterToday', '1');
     await loadPlanner();
     renderPlanner();
   });
@@ -643,7 +656,23 @@ function renderPlanner() {
 
   $('#planner-previous-week')?.addEventListener('change', async event => {
     state.plannerPreviousWeek = event.currentTarget.checked;
+    if (state.plannerPreviousWeek) {
+      state.plannerCenterToday = false;
+      localStorage.setItem('mealPlannerCenterToday', '0');
+    }
     localStorage.setItem('mealPlannerPreviousWeek', state.plannerPreviousWeek ? '1' : '0');
+    await loadPlanner();
+    renderPlanner();
+  });
+
+  $('#planner-center-today')?.addEventListener('change', async event => {
+    state.plannerCenterToday = event.currentTarget.checked;
+    if (state.plannerCenterToday) {
+      state.plannerPreviousWeek = false;
+      state.weekStart = startOfWeek(new Date());
+      localStorage.setItem('mealPlannerPreviousWeek', '0');
+    }
+    localStorage.setItem('mealPlannerCenterToday', state.plannerCenterToday ? '1' : '0');
     await loadPlanner();
     renderPlanner();
   });
@@ -1030,7 +1059,8 @@ function customMealDetailsMarkup(plan) {
   if (plan.customProtein) details.push(`Protein: ${escapeHtml(plan.customProtein)}`);
   if (Array.isArray(plan.customSides) && plan.customSides.length) {
     const sides = plan.customSides.map(side => escapeHtml(side.name)).join(', ');
-    details.push(`Sides: ${sides}`);
+    const sideLabel = plan.customSides.length === 1 ? 'Side' : 'Sides';
+    details.push(`${sideLabel}: ${sides}`);
   }
   return details.length ? `<p class="custom-meal-details">${details.join(' · ')}</p>` : '';
 }
@@ -1874,6 +1904,16 @@ function renderGrocery() {
 }
 
 function renderHistory() {
+  const sortedHistory = [...state.history].sort((a, b) => {
+    const byDate = String(b.date || '').localeCompare(String(a.date || ''));
+    if (byDate) return byDate;
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+  const visibleHistory = getVisibleHistory(sortedHistory);
+  const historySummary = visibleHistory.length === sortedHistory.length
+    ? `Showing all ${sortedHistory.length} meal${sortedHistory.length === 1 ? '' : 's'}.`
+    : `Showing ${visibleHistory.length} of ${sortedHistory.length} meals.`;
+
   pageRoot.innerHTML = `
     <section class="grid two">
       <form id="history-form" class="form-card">
@@ -1889,12 +1929,61 @@ function renderHistory() {
         </div>
         <button class="primary full" type="submit">Save History</button>
       </form>
-      <article class="card">
-        <h3>Meal History</h3>
-        <div class="list">${state.history.length ? state.history.map(historyItem).join('') : '<div class="empty">History is saved when meals are eaten or added manually.</div>'}</div>
+      <article class="card history-card">
+        <div class="history-card-header">
+          <div>
+            <h3>Meal History</h3>
+            <p class="muted">${historySummary}</p>
+          </div>
+          <div class="history-display-controls" aria-label="Meal history display options">
+            <label>Show By
+              <select id="history-view-mode">
+                ${option('amount', 'Amount', state.historyViewMode)}
+                ${option('date', 'Date', state.historyViewMode)}
+              </select>
+            </label>
+            <label class="history-amount-control ${state.historyViewMode === 'amount' ? '' : 'hidden'}">Meals
+              <select id="history-amount">
+                ${option('5', '5', state.historyAmount)}
+                ${option('10', '10', state.historyAmount)}
+                ${option('20', '20', state.historyAmount)}
+                ${option('50', '50', state.historyAmount)}
+                ${option('all', 'All', state.historyAmount)}
+              </select>
+            </label>
+            <label class="history-date-control ${state.historyViewMode === 'date' ? '' : 'hidden'}">Date Range
+              <select id="history-days">
+                ${option('7', 'Last 7 Days', state.historyDays)}
+                ${option('30', 'Last 30 Days', state.historyDays)}
+                ${option('90', 'Last 90 Days', state.historyDays)}
+                ${option('365', 'Last Year', state.historyDays)}
+                ${option('all', 'All Dates', state.historyDays)}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="list">${visibleHistory.length ? visibleHistory.map(historyItem).join('') : '<div class="empty">No meals match the selected history view.</div>'}</div>
       </article>
     </section>
   `;
+
+  $('#history-view-mode')?.addEventListener('change', event => {
+    state.historyViewMode = event.currentTarget.value === 'date' ? 'date' : 'amount';
+    localStorage.setItem('mealPlannerHistoryViewMode', state.historyViewMode);
+    renderHistory();
+  });
+
+  $('#history-amount')?.addEventListener('change', event => {
+    state.historyAmount = event.currentTarget.value;
+    localStorage.setItem('mealPlannerHistoryAmount', state.historyAmount);
+    renderHistory();
+  });
+
+  $('#history-days')?.addEventListener('change', event => {
+    state.historyDays = event.currentTarget.value;
+    localStorage.setItem('mealPlannerHistoryDays', state.historyDays);
+    renderHistory();
+  });
 
   $('#history-form').addEventListener('submit', async event => {
     event.preventDefault();
@@ -1916,6 +2005,24 @@ function renderHistory() {
       renderHistory();
     });
   });
+}
+
+function getVisibleHistory(sortedHistory) {
+  if (state.historyViewMode === 'date') {
+    if (state.historyDays === 'all') return sortedHistory;
+    const days = Math.max(1, Number(state.historyDays) || 30);
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (days - 1));
+    return sortedHistory.filter(item => {
+      const itemDate = new Date(`${item.date}T12:00:00`);
+      return Number.isFinite(itemDate.getTime()) && itemDate >= cutoff;
+    });
+  }
+
+  if (state.historyAmount === 'all') return sortedHistory;
+  const amount = Math.max(1, Number(state.historyAmount) || 5);
+  return sortedHistory.slice(0, amount);
 }
 
 function renderStats() {
@@ -2740,6 +2847,9 @@ function getPlannerDisplayDays() {
 }
 
 function getPlannerRangeStart() {
+  if (state.plannerDisplay === 'cards' && state.plannerCenterToday && !state.plannerPreviousWeek) {
+    return addDays(dateISO(new Date()), -3);
+  }
   const baseStart = state.plannerPreviousWeek ? addDays(state.weekStart, -7) : state.weekStart;
   if (state.plannerView === 'month') return startOfMonthGrid(baseStart);
   return baseStart;

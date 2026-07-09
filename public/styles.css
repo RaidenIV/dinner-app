@@ -5289,3 +5289,102 @@ body > .slot-tag-modal .slot-tag-modal-card {
     width: 82px;
   }
 }
+
+/* Current request: centered-today planner option, compact history controls, and label refinements */
+.planner-center-toggle {
+  min-height: 34px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--white);
+  white-space: nowrap;
+}
+
+.planner-center-toggle.is-disabled {
+  opacity: 0.5;
+}
+
+/* Keep the current-day border treatment but remove the TODAY badge. */
+.calendar-day.today .calendar-day-name::after {
+  content: none !important;
+  display: none !important;
+}
+
+.history-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.history-card-header h3,
+.history-card-header p {
+  margin: 0;
+}
+
+.history-card-header p {
+  margin-top: 4px;
+}
+
+.history-display-controls {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-display-controls label {
+  display: grid;
+  gap: 5px;
+  min-width: 104px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.history-display-controls select {
+  min-height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.history-display-controls .history-date-control {
+  min-width: 142px;
+}
+
+@media (max-width: 980px) {
+  .planner-center-toggle {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .history-card-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-display-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .history-display-controls label,
+  .history-display-controls .history-date-control {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .history-display-controls {
+    grid-template-columns: 1fr;
+  }
+}
