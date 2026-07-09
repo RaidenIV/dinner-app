@@ -21,26 +21,36 @@
         <div class="auth-title-row"><h1>HomePlate</h1><span class="homeplate-logo-icon" aria-hidden="true"></span></div>
         <p class="muted">Plan the week, pick restaurants, organize recipes, and keep the grocery list in sync.</p>
 
-        <div class="auth-tabs">
-          <button class="tab active" data-auth-tab="login" type="button">Log In</button>
-          <button class="tab" data-auth-tab="signup" type="button">Sign Up</button>
+        <div class="auth-tabs" data-auth-mode="login" role="tablist" aria-label="Account access">
+          <button class="tab active" data-auth-tab="login" type="button" role="tab" aria-selected="true" aria-controls="login-panel">Log In</button>
+          <button class="tab" data-auth-tab="signup" type="button" role="tab" aria-selected="false" aria-controls="signup-panel">Sign Up</button>
         </div>
 
-        <form id="login-form" class="auth-form">
-          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
-          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
-          <label class="checkbox-line remember-line"><input name="rememberMe" type="checkbox" checked /> Remember me</label>
-          <button type="submit" class="primary full">Log In</button>
-        </form>
+        <div class="auth-form-stage">
+          <div id="login-panel" class="auth-form-expander open" data-auth-panel="login" aria-hidden="false">
+            <div class="auth-form-inner">
+              <form id="login-form" class="auth-form">
+                <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+                <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+                <label class="checkbox-line remember-line"><input name="rememberMe" type="checkbox" checked /> Remember me</label>
+                <button type="submit" class="primary full">Log In</button>
+              </form>
+            </div>
+          </div>
 
-        <form id="signup-form" class="auth-form hidden">
-          <label>Name<input name="name" type="text" autocomplete="name" required /></label>
-          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
-          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
-          <label>Household Name<input name="householdName" type="text" placeholder="Evans Home" /></label>
-          <label>Invite Code <span class="optional">optional</span><input name="inviteCode" type="text" placeholder="Join an existing household" /></label>
-          <button type="submit" class="primary full">Create Account</button>
-        </form>
+          <div id="signup-panel" class="auth-form-expander" data-auth-panel="signup" aria-hidden="true">
+            <div class="auth-form-inner">
+              <form id="signup-form" class="auth-form">
+                <label>Name<input name="name" type="text" autocomplete="name" required /></label>
+                <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+                <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
+                <label>Household Name<input name="householdName" type="text" placeholder="Evans Home" /></label>
+                <label>Invite Code <span class="optional">optional</span><input name="inviteCode" type="text" placeholder="Join an existing household" /></label>
+                <button type="submit" class="primary full">Create Account</button>
+              </form>
+            </div>
+          </div>
+        </div>
 
         <p id="auth-error" class="error-text" aria-live="polite"></p>
       </section>

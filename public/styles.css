@@ -4826,3 +4826,273 @@ body > .slot-tag-modal .slot-tag-modal-card {
 .meal-eaten-toggle:hover span {
   transform: scale(1.06);
 }
+
+/* Current request: smooth auth transitions, fixed planner overflow, static nav highlight, household modal, and click-to-spin */
+.auth-tabs {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.auth-tabs::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 6px);
+  border-radius: 9999px;
+  background: var(--brand);
+  box-shadow: 0 5px 14px rgba(75, 19, 240, 0.18);
+  transform: translate3d(0, 0, 0);
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease, box-shadow 0.2s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-tabs[data-auth-mode="signup"]::before {
+  transform: translate3d(calc(100% + 4px), 0, 0);
+}
+
+.auth-tabs .tab {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+  transition: color 0.24s ease, transform 0.18s ease;
+}
+
+.auth-tabs .tab.active {
+  color: var(--white);
+}
+
+.auth-tabs .tab:active {
+  transform: scale(0.98);
+}
+
+.auth-form-stage {
+  display: grid;
+  min-width: 0;
+}
+
+.auth-form-expander {
+  display: grid;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  opacity: 0;
+  transform: translateY(-5px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.22s ease,
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0.34s;
+}
+
+.auth-form-expander.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.auth-form-inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.auth-form-expander .auth-form {
+  padding-top: 1px;
+}
+
+/* Keep the existing expanding UI motion consistent and restrained. */
+.time-modal-body,
+.source-field-expander {
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.meal-action-menu,
+.restaurant-action-menu {
+  transform-origin: top right;
+  transform: translateY(-5px) scale(0.97);
+  transition: opacity 0.18s ease, transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.18s;
+}
+
+.meal-action-menu.open,
+.restaurant-action-menu.open {
+  transform: translateY(0) scale(1);
+}
+
+/* Re-enable a local menu highlight without the magnetic/sliding indicator. */
+.topnav-nav::before,
+#controlPanel.control-panel.topnav-nav::before,
+.control-panel.topnav-nav::before {
+  display: none !important;
+  opacity: 0 !important;
+}
+
+.topnav-nav .nav-item,
+.control-panel.topnav-nav .nav-item {
+  transition: color 0.18s ease, background 0.18s ease, transform 0.16s ease;
+}
+
+.topnav-nav .nav-item:hover,
+.topnav-nav .nav-item.active,
+.control-panel.topnav-nav .nav-item:hover,
+.control-panel.topnav-nav .nav-item.active {
+  background: var(--brand-light);
+  color: var(--brand);
+}
+
+/* Daily cards must contain all meal content without horizontal scrolling. */
+.daily-planner-grid,
+.daily-planner-grid .calendar-day,
+.daily-planner-grid .calendar-meals,
+.daily-planner-grid .calendar-meal,
+.daily-planner-grid .calendar-meal-top,
+.daily-planner-grid .calendar-meal-main,
+.daily-planner-grid .calendar-meal-name-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.daily-planner-grid,
+.daily-planner-grid .calendar-day,
+.daily-planner-grid .calendar-meals,
+.daily-planner-grid .calendar-meal {
+  overflow-x: hidden;
+}
+
+.daily-planner-grid .calendar-meal-main strong,
+.daily-planner-grid .calendar-meal-main p,
+.daily-planner-grid .custom-meal-details,
+.daily-planner-grid .badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Past days retain the subtle tonal treatment without a status badge. */
+.calendar-day.past-day .calendar-day-date::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Household quick settings: only the household card content appears in this modal. */
+.household-settings-modal {
+  z-index: 520;
+}
+
+.household-modal-card {
+  width: min(520px, 100%);
+}
+
+.household-modal-card.card {
+  margin: 0;
+}
+
+.household-modal-content {
+  display: grid;
+  gap: 14px;
+  padding-top: 2px;
+}
+
+.household-modal-content .invite-code-row,
+.household-modal-content .household-name-form {
+  margin: 0;
+}
+
+/* Restaurant list view switch: visible slide animation beside the section label. */
+.restaurant-list-heading-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.restaurant-list-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.restaurant-list-title-row h3 {
+  margin: 0;
+}
+
+.restaurant-view-toggle {
+  flex: 0 0 auto;
+  touch-action: manipulation;
+}
+
+.restaurant-view-toggle::before {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 12px rgba(75, 19, 240, 0.16);
+}
+
+.restaurant-view-toggle[data-switching="1"]::before {
+  box-shadow: 0 7px 18px rgba(75, 19, 240, 0.22);
+}
+
+/* The restaurant reel itself is the spin control. */
+.slot-machine-trigger {
+  cursor: pointer !important;
+  user-select: none;
+  touch-action: manipulation;
+  transition: border-color 0.2s ease, box-shadow 0.22s ease, transform 0.18s ease, background 0.2s ease;
+}
+
+.slot-machine-trigger:hover,
+.slot-machine-trigger:focus-visible {
+  border-color: var(--brand);
+  box-shadow: 0 10px 26px rgba(75, 19, 240, 0.14), inset 0 0 0 1px var(--brand-border);
+  outline: none;
+}
+
+.slot-machine-trigger:active {
+  transform: scale(0.992);
+}
+
+.slot-machine-trigger.spinning,
+.slot-machine-result[data-spinning="1"] .slot-machine-trigger {
+  cursor: wait !important;
+}
+
+@media (max-width: 620px) {
+  .restaurant-list-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .restaurant-view-toggle {
+    width: min(100%, 220px);
+  }
+
+  .household-settings-modal {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .household-modal-card {
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-tabs::before,
+  .auth-form-expander,
+  .time-modal-body,
+  .source-field-expander,
+  .meal-action-menu,
+  .restaurant-action-menu,
+  .restaurant-view-toggle::before,
+  .slot-machine-trigger {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

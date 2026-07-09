@@ -60,16 +60,30 @@ function init() {
 }
 
 function bindAuth() {
-  document.querySelectorAll('[data-auth-tab]').forEach(button => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('[data-auth-tab]').forEach(tab => tab.classList.remove('active'));
-      button.classList.add('active');
-      const mode = button.dataset.authTab;
-      $('#login-form').classList.toggle('hidden', mode !== 'login');
-      $('#signup-form').classList.toggle('hidden', mode !== 'signup');
-      $('#auth-error').textContent = '';
+  const authTabs = document.querySelector('.auth-tabs');
+  const setAuthMode = mode => {
+    const nextMode = mode === 'signup' ? 'signup' : 'login';
+    authTabs?.setAttribute('data-auth-mode', nextMode);
+    document.querySelectorAll('[data-auth-tab]').forEach(tab => {
+      const isActive = tab.dataset.authTab === nextMode;
+      tab.classList.toggle('active', isActive);
+      tab.setAttribute('aria-selected', String(isActive));
     });
+    document.querySelectorAll('[data-auth-panel]').forEach(panel => {
+      const isOpen = panel.dataset.authPanel === nextMode;
+      panel.classList.toggle('open', isOpen);
+      panel.setAttribute('aria-hidden', String(!isOpen));
+      panel.querySelectorAll('input, button, select, textarea').forEach(control => {
+        control.tabIndex = isOpen ? 0 : -1;
+      });
+    });
+    $('#auth-error').textContent = '';
+  };
+
+  document.querySelectorAll('[data-auth-tab]').forEach(button => {
+    button.addEventListener('click', () => setAuthMode(button.dataset.authTab));
   });
+  setAuthMode(authTabs?.dataset.authMode || 'login');
 
   $('#login-form').addEventListener('submit', async event => {
     event.preventDefault();
@@ -110,7 +124,7 @@ function bindShell() {
   });
 
   $('#household-banner-btn')?.addEventListener('click', async () => {
-    await openSettingsPage('household');
+    await openHouseholdSettingsModal();
   });
 
   document.querySelectorAll('[data-page]').forEach(button => {
@@ -253,6 +267,87 @@ async function openSettingsPage(focusSection = '') {
   }
 }
 
+async function openHouseholdSettingsModal() {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.household-settings-modal')?.remove();
+
+  const data = await api('/api/household');
+  const overlay = document.createElement('div');
+  overlay.className = 'time-modal-overlay household-settings-modal';
+  overlay.innerHTML = `
+    <article class="time-modal-card card household-modal-card" role="dialog" aria-modal="true" aria-labelledby="household-modal-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="household-modal-title">Household</h3>
+          <p class="muted">Manage the shared household details used by HomePlate.</p>
+        </div>
+        <button class="small-btn modal-close-btn" type="button" data-close-household-modal aria-label="Close household settings">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <div class="household-modal-content">
+            <p class="muted">Share this invite code with anyone you want in the meal planner.</p>
+            <div class="invite-code-row">
+              <div class="kpi invite-code" aria-label="Household invite code">${formatInviteCode(data.household.inviteCode)}</div>
+              <button class="secondary copy-invite-btn" type="button" data-copy-household-invite="${escapeHtml(String(data.household.inviteCode || '').toUpperCase())}"><i class="ti ti-copy"></i>Copy</button>
+            </div>
+            <form id="household-modal-form" class="invite-form household-name-form">
+              <label>Household Name<input name="name" type="text" maxlength="80" required value="${escapeAttr(data.household.name || '')}" /></label>
+              <label>Home Address<input name="homeAddress" type="text" maxlength="220" placeholder="Street, city, state, ZIP" autocomplete="street-address" list="household-modal-address-options" value="${escapeAttr(data.household.homeAddress || '')}" /></label>
+              <p class="muted household-distance-help">Used to calculate approximate distance to saved restaurants.</p>
+              <button class="secondary full" type="submit"><i class="ti ti-home-edit"></i>Save Household Details</button>
+            </form>
+            ${addressAutocompleteDatalist().replace('id="address-autocomplete-options"', 'id="household-modal-address-options"')}
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  const close = () => {
+    overlay.classList.add('closing');
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+
+  overlay.querySelector('[data-close-household-modal]')?.addEventListener('click', close);
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  overlay.querySelector('[data-copy-household-invite]')?.addEventListener('click', async event => {
+    try {
+      await copyTextToClipboard(event.currentTarget.dataset.copyHouseholdInvite || '');
+      showToast('Invite code copied.');
+    } catch (error) {
+      showToast('Unable to copy invite code.');
+    }
+  });
+  overlay.querySelector('#household-modal-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await withSaveFeedback(form, async () => {
+      const formData = new FormData(form);
+      const name = String(formData.get('name') || '').trim();
+      const homeAddress = String(formData.get('homeAddress') || '').trim();
+      if (!name) throw new Error('Enter a household name.');
+      const household = await api('/api/household', { method: 'PATCH', body: { name, homeAddress } });
+      state.household = household;
+      $('#household-name').textContent = household?.name || 'Meal Planner';
+      await loadRestaurants();
+      close();
+    }, 'Household details updated.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('[data-close-household-modal]')?.focus();
+}
+
 async function loadBaseData() {
   await Promise.all([
     loadRecipes(),
@@ -281,9 +376,10 @@ async function renderCurrentPage() {
 }
 
 function updateHouseholdBannerVisibility() {
+  const isSettingsPage = state.page === 'settings';
   const button = $('#household-banner-btn');
-  if (!button) return;
-  button.classList.toggle('hidden', state.page === 'settings');
+  button?.classList.toggle('hidden', isSettingsPage);
+  document.querySelector('.topbar-actions')?.classList.toggle('hidden', isSettingsPage);
 }
 
 function setActiveNav(page) {
@@ -1505,7 +1601,6 @@ function renderRestaurants() {
             </label>
           </div>
           ${restaurantRandomFilterGroups()}
-          <button class="primary slot-spin-btn" type="submit">Spin</button>
         </form>
         <div id="random-result" class="slot-machine-result">
           ${slotMachinePlaceholder()}
@@ -1515,15 +1610,17 @@ function renderRestaurants() {
     </section>
     <section class="card restaurant-list-section">
       <div class="section-head restaurant-list-head">
-        <div>
-          <h3>${showingWantToGo ? 'Want To' : 'Saved Restaurants'}</h3>
-          <p class="muted">${visibleCount} saved ${visibleCount === 1 ? 'spot' : 'spots'}</p>
+        <div class="restaurant-list-heading-block">
+          <div class="restaurant-list-title-row">
+            <h3>Saved Restaurants</h3>
+            <div class="restaurant-view-toggle ${showingWantToGo ? 'want-active' : 'saved-active'}" role="group" aria-label="Restaurant list view" data-restaurant-list-toggle data-current-view="${showingWantToGo ? 'want' : 'saved'}">
+              <button class="${showingWantToGo ? '' : 'active'}" type="button" data-restaurant-list-view="saved">Saved</button>
+              <button class="${showingWantToGo ? 'active' : ''}" type="button" data-restaurant-list-view="want">Want To</button>
+            </div>
+          </div>
+          <p class="muted">${visibleCount} ${showingWantToGo ? 'want-to' : 'saved'} ${visibleCount === 1 ? 'spot' : 'spots'}</p>
         </div>
         <div class="restaurant-list-tools">
-          <div class="restaurant-view-toggle ${showingWantToGo ? 'want-active' : 'saved-active'}" role="group" aria-label="Restaurant list view" data-restaurant-list-toggle>
-            <button class="${showingWantToGo ? '' : 'active'}" type="button" data-restaurant-list-view="saved">Saved</button>
-            <button class="${showingWantToGo ? 'active' : ''}" type="button" data-restaurant-list-view="want">Want To</button>
-          </div>
           ${showingWantToGo ? '' : `
             <label class="compact-control restaurant-sort-control">Sort
               <select id="restaurant-sort-select" name="restaurantSort">
@@ -1564,20 +1661,43 @@ function renderRestaurants() {
   });
 
   const randomRestaurantForm = $('#random-restaurant-form');
+  const randomResult = $('#random-result');
+  const triggerRestaurantSpin = () => spinRandomRestaurant(randomRestaurantForm);
   randomRestaurantForm.addEventListener('submit', event => {
     event.preventDefault();
-    spinRandomRestaurant(event.currentTarget);
+    triggerRestaurantSpin();
+  });
+  randomResult?.addEventListener('click', event => {
+    if (event.target.closest('[data-spin-slot]')) triggerRestaurantSpin();
+  });
+  randomResult?.addEventListener('keydown', event => {
+    if (!event.target.closest('[data-spin-slot]') || !['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    triggerRestaurantSpin();
   });
   bindSlotTagFilterModal(randomRestaurantForm);
 
   pageRoot.querySelector('[data-restaurant-list-toggle]')?.addEventListener('click', event => {
-    const button = event.target.closest('[data-restaurant-list-view]');
-    const nextView = button?.dataset.restaurantListView || (state.restaurantListView === 'want' ? 'saved' : 'want');
-    state.restaurantListView = nextView === 'want' ? 'want' : 'saved';
-    localStorage.setItem('mealPlannerRestaurantListView', state.restaurantListView);
-    state.editingRestaurantId = '';
-    state.openRestaurantMenuId = '';
-    renderRestaurants();
+    const toggle = event.currentTarget;
+    if (toggle.dataset.switching === '1') return;
+    const currentView = toggle.dataset.currentView === 'want' ? 'want' : 'saved';
+    const nextView = currentView === 'want' ? 'saved' : 'want';
+
+    toggle.dataset.switching = '1';
+    toggle.dataset.currentView = nextView;
+    toggle.classList.toggle('want-active', nextView === 'want');
+    toggle.classList.toggle('saved-active', nextView !== 'want');
+    toggle.querySelectorAll('[data-restaurant-list-view]').forEach(button => {
+      button.classList.toggle('active', button.dataset.restaurantListView === nextView);
+    });
+
+    window.setTimeout(() => {
+      state.restaurantListView = nextView === 'want' ? 'want' : 'saved';
+      localStorage.setItem('mealPlannerRestaurantListView', state.restaurantListView);
+      state.editingRestaurantId = '';
+      state.openRestaurantMenuId = '';
+      renderRestaurants();
+    }, 230);
   });
 
   $('#restaurant-sort-select')?.addEventListener('change', event => {
@@ -2231,10 +2351,10 @@ function mapLinkForAddress(address) {
 
 function slotMachinePlaceholder() {
   return `
-    <div class="slot-machine-window" aria-live="polite">
-      <div class="slot-reel winner"><span>Tap Spin</span></div>
+    <div class="slot-machine-window slot-machine-trigger" data-spin-slot role="button" tabindex="0" aria-label="Spin for a restaurant" aria-live="polite">
+      <div class="slot-reel winner"><span>Tap To Spin</span></div>
     </div>
-    <p class="muted slot-machine-hint">Only the restaurant name appears on the reel.</p>
+    <p class="muted slot-machine-hint">Tap the reel to choose from the restaurants that match your filters.</p>
   `;
 }
 
@@ -2292,8 +2412,7 @@ function pickWeightedRestaurant(restaurants) {
 
 function spinRandomRestaurant(form) {
   const resultRoot = $('#random-result');
-  const submitButton = form.querySelector('[type="submit"]');
-  if (!resultRoot) return;
+  if (!resultRoot || resultRoot.dataset.spinning === '1') return;
 
   const filters = getRandomRestaurantFilters(form);
   const candidates = getFilteredRandomRestaurants(filters);
@@ -2309,10 +2428,10 @@ function spinRandomRestaurant(form) {
   let lastSwap = 0;
   const duration = 1750;
   const startTime = performance.now();
-  submitButton.disabled = true;
+  resultRoot.dataset.spinning = '1';
   resultRoot.classList.add('spinning');
   resultRoot.innerHTML = `
-    <div class="slot-machine-window spinning" aria-live="polite">
+    <div class="slot-machine-window slot-machine-trigger spinning" data-spin-slot role="button" tabindex="-1" aria-disabled="true" aria-label="Restaurant selector spinning" aria-live="polite">
       <div class="slot-reel winner"><span>${escapeHtml(reelItems[0]?.name || 'Spin')}</span></div>
     </div>
     <p class="muted slot-machine-hint">Spinning through ${candidates.length} matching ${candidates.length === 1 ? 'spot' : 'spots'}...</p>
@@ -2340,7 +2459,7 @@ function spinRandomRestaurant(form) {
       return;
     }
 
-    submitButton.disabled = false;
+    delete resultRoot.dataset.spinning;
     resultRoot.classList.remove('spinning');
     resultRoot.innerHTML = renderSlotMachinePick(pick, candidates.length);
   };
@@ -2353,7 +2472,7 @@ function renderSlotMachinePick(restaurant, poolSize) {
   const tags = (restaurant.tags || []).join(', ');
   return `
     <div class="slot-machine-pick">
-      <div class="slot-machine-window settled">
+      <div class="slot-machine-window slot-machine-trigger settled" data-spin-slot role="button" tabindex="0" aria-label="Spin again for another restaurant">
         <div class="slot-reel winner"><span>${escapeHtml(restaurant.name || 'Restaurant')}</span></div>
       </div>
       <div class="slot-pick-details">
