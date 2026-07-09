@@ -47,9 +47,16 @@ await mongoose.connect(MONGODB_URI);
 
 const objectId = mongoose.Schema.Types.ObjectId;
 
+const coordinateSchema = new mongoose.Schema({
+  lat: { type: Number, default: null },
+  lng: { type: Number, default: null }
+}, { _id: false });
+
 const householdSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
   inviteCode: { type: String, required: true, unique: true, index: true },
+  homeAddress: { type: String, default: '', trim: true, maxlength: 220 },
+  homeCoordinates: { type: coordinateSchema, default: null },
   createdBy: { type: objectId, ref: 'User' }
 }, { timestamps: true });
 
@@ -113,6 +120,7 @@ const restaurantSchema = new mongoose.Schema({
   cuisine: { type: String, default: '', trim: true, index: true },
   priceLevel: { type: String, enum: ['$', '$$', '$$$', '$$$$'], default: '$$' },
   location: { type: String, default: '', trim: true },
+  locationCoordinates: { type: coordinateSchema, default: null },
   link: { type: String, default: '', trim: true },
   favoriteDishes: [{ type: String, trim: true }],
   tags: [{ type: String, trim: true }],
@@ -270,6 +278,91 @@ function normalizeTags(value) {
     .split(',')
     .map(v => v.trim())
     .filter(Boolean);
+}
+
+
+function hasCoordinates(value) {
+  return value?.lat !== null && value?.lat !== undefined && value?.lat !== ''
+    && value?.lng !== null && value?.lng !== undefined && value?.lng !== ''
+    && Number.isFinite(Number(value.lat))
+    && Number.isFinite(Number(value.lng));
+}
+
+function distanceMilesBetween(from, to) {
+  if (!hasCoordinates(from) || !hasCoordinates(to)) return null;
+  const toRadians = degrees => degrees * (Math.PI / 180);
+  const earthRadiusMiles = 3958.7613;
+  const lat1 = toRadians(Number(from.lat));
+  const lat2 = toRadians(Number(to.lat));
+  const deltaLat = toRadians(Number(to.lat) - Number(from.lat));
+  const deltaLng = toRadians(Number(to.lng) - Number(from.lng));
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(earthRadiusMiles * c * 10) / 10;
+}
+
+function restaurantWithDistance(restaurant, homeCoordinates) {
+  const distanceMiles = distanceMilesBetween(homeCoordinates, restaurant?.locationCoordinates);
+  return {
+    ...restaurant,
+    distanceMiles
+  };
+}
+
+async function geocodeAddress(address) {
+  const normalized = String(address || '').trim();
+  if (!normalized) return null;
+
+  const url = new URL('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress');
+  url.searchParams.set('address', normalized);
+  url.searchParams.set('benchmark', 'Public_AR_Current');
+  url.searchParams.set('format', 'json');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error(`Address lookup failed with ${response.status}.`);
+    const data = await response.json();
+    const match = data?.result?.addressMatches?.[0];
+    const lat = Number(match?.coordinates?.y);
+    const lng = Number(match?.coordinates?.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function refreshRestaurantCoordinates(householdId) {
+  const restaurants = await Restaurant.find({
+    householdId,
+    location: { $nin: ['', null] }
+  }).select('_id location locationCoordinates').lean();
+
+  const pending = restaurants.filter(restaurant => !hasCoordinates(restaurant.locationCoordinates));
+  let updatedCount = 0;
+  const concurrency = 4;
+
+  for (let index = 0; index < pending.length; index += concurrency) {
+    const batch = pending.slice(index, index + concurrency);
+    const results = await Promise.allSettled(batch.map(async restaurant => {
+      const coordinates = await geocodeAddress(restaurant.location);
+      if (!coordinates) return false;
+      await Restaurant.updateOne(
+        { _id: restaurant._id, householdId },
+        { $set: { locationCoordinates: coordinates } }
+      );
+      return true;
+    }));
+    updatedCount += results.filter(result => result.status === 'fulfilled' && result.value).length;
+  }
+
+  return updatedCount;
 }
 
 function normalizeCustomSides(value) {
@@ -662,16 +755,53 @@ app.post('/api/household/join', authenticate, async (req, res) => {
 });
 
 app.patch('/api/household', authenticate, async (req, res) => {
-  const update = {};
-  if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
-    const name = String(req.body.name || '').trim();
-    if (!name) return res.status(400).json({ error: 'Household name is required.' });
-    update.name = name.slice(0, 80);
-  }
+  try {
+    const update = {};
+    let shouldRefreshRestaurantCoordinates = false;
 
-  const household = await Household.findByIdAndUpdate(req.householdId, update, { new: true }).lean();
-  broadcastHouseholdUpdate(req, 'household:updated');
-  res.json(household);
+    if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
+      const name = String(req.body.name || '').trim();
+      if (!name) return res.status(400).json({ error: 'Household name is required.' });
+      update.name = name.slice(0, 80);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'homeAddress')) {
+      const homeAddress = String(req.body.homeAddress || '').trim().slice(0, 220);
+      update.homeAddress = homeAddress;
+
+      if (!homeAddress) {
+        update.homeCoordinates = null;
+      } else {
+        let coordinates;
+        try {
+          coordinates = await geocodeAddress(homeAddress);
+        } catch (error) {
+          return res.status(502).json({ error: 'Home address lookup is temporarily unavailable. Try again shortly.' });
+        }
+        if (!coordinates) {
+          return res.status(400).json({ error: 'Could not locate that home address. Include the street, city, state, and ZIP code.' });
+        }
+        update.homeCoordinates = coordinates;
+        shouldRefreshRestaurantCoordinates = true;
+      }
+    }
+
+    const household = await Household.findByIdAndUpdate(req.householdId, update, { new: true, runValidators: true }).lean();
+    if (!household) return res.status(404).json({ error: 'Household not found.' });
+
+    if (shouldRefreshRestaurantCoordinates) {
+      try {
+        await refreshRestaurantCoordinates(req.householdId);
+      } catch (error) {
+        console.warn('Restaurant distance refresh failed:', error.message);
+      }
+    }
+
+    broadcastHouseholdUpdate(req, 'household:updated');
+    res.json(household);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to update household.' });
+  }
 });
 
 app.get('/api/recipes', authenticate, async (req, res) => {
@@ -753,18 +883,32 @@ app.get('/api/restaurants', authenticate, async (req, res) => {
   if (tag) filter.tags = { $regex: `^${escapeRegex(tag)}$`, $options: 'i' };
   if (priceLevel) filter.priceLevel = priceLevel;
 
-  const restaurants = await Restaurant.find(filter).sort({ favorite: -1, updatedAt: -1 }).lean();
-  res.json(restaurants);
+  const [restaurants, household] = await Promise.all([
+    Restaurant.find(filter).sort({ favorite: -1, updatedAt: -1 }).lean(),
+    Household.findById(req.householdId).select('homeCoordinates').lean()
+  ]);
+  res.json(restaurants.map(restaurant => restaurantWithDistance(restaurant, household?.homeCoordinates)));
 });
 
 app.post('/api/restaurants', authenticate, async (req, res) => {
   try {
+    const location = String(req.body.location || '').trim();
+    let locationCoordinates = null;
+    if (location) {
+      try {
+        locationCoordinates = await geocodeAddress(location);
+      } catch (error) {
+        console.warn('Restaurant address lookup failed:', error.message);
+      }
+    }
+
     const restaurant = await Restaurant.create({
       householdId: req.householdId,
       name: req.body.name,
       cuisine: req.body.cuisine || '',
       priceLevel: req.body.priceLevel || '$$',
-      location: req.body.location || '',
+      location,
+      locationCoordinates,
       link: req.body.link || '',
       favoriteDishes: normalizeTags(req.body.favoriteDishes),
       tags: normalizeTags(req.body.tags),
@@ -781,22 +925,43 @@ app.post('/api/restaurants', authenticate, async (req, res) => {
 });
 
 app.put('/api/restaurants/:id', authenticate, async (req, res) => {
-  const update = {
-    name: req.body.name,
-    cuisine: req.body.cuisine || '',
-    priceLevel: req.body.priceLevel || '$$',
-    location: req.body.location || '',
-    link: req.body.link || '',
-    favoriteDishes: normalizeTags(req.body.favoriteDishes),
-    tags: normalizeTags(req.body.tags),
-    rating: Number(req.body.rating || 0),
-    favorite: Boolean(req.body.favorite),
-    wantToGo: Boolean(req.body.wantToGo)
-  };
-  const restaurant = await Restaurant.findOneAndUpdate({ _id: req.params.id, householdId: req.householdId }, update, { new: true });
-  if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });
-  broadcastHouseholdUpdate(req, 'restaurants:updated', { restaurantId: restaurant._id.toString() });
-  res.json(restaurant);
+  try {
+    const restaurant = await Restaurant.findOne({ _id: req.params.id, householdId: req.householdId });
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });
+
+    const location = String(req.body.location || '').trim();
+    let locationCoordinates = restaurant.locationCoordinates || null;
+    if (!location) {
+      locationCoordinates = null;
+    } else if (location !== restaurant.location || !hasCoordinates(locationCoordinates)) {
+      try {
+        locationCoordinates = await geocodeAddress(location);
+      } catch (error) {
+        console.warn('Restaurant address lookup failed:', error.message);
+        locationCoordinates = null;
+      }
+    }
+
+    restaurant.set({
+      name: req.body.name,
+      cuisine: req.body.cuisine || '',
+      priceLevel: req.body.priceLevel || '$$',
+      location,
+      locationCoordinates,
+      link: req.body.link || '',
+      favoriteDishes: normalizeTags(req.body.favoriteDishes),
+      tags: normalizeTags(req.body.tags),
+      rating: Number(req.body.rating || 0),
+      favorite: Boolean(req.body.favorite),
+      wantToGo: Boolean(req.body.wantToGo)
+    });
+    await restaurant.save();
+
+    broadcastHouseholdUpdate(req, 'restaurants:updated', { restaurantId: restaurant._id.toString() });
+    res.json(restaurant);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not update restaurant.' });
+  }
 });
 
 app.delete('/api/restaurants/:id', authenticate, async (req, res) => {

@@ -25,6 +25,7 @@ const state = {
   stats: null,
   suggestions: [],
   restaurantSort: localStorage.getItem('mealPlannerRestaurantSort') || 'favorite',
+  restaurantListView: localStorage.getItem('mealPlannerRestaurantListView') || 'saved',
   editingRestaurantId: '',
   openRestaurantMenuId: '',
   openPlannerMealMenuId: '',
@@ -1009,9 +1010,7 @@ function plannerMealItem(plan) {
           </div>
         </div>
       </div>
-      <div class="calendar-meal-actions">
-        ${plannerStatusMarkup(plan.status)}
-      </div>
+      ${plan.status && plan.status !== 'planned' ? `<div class="calendar-meal-actions">${plannerStatusMarkup(plan.status)}</div>` : ''}
     </article>
   `;
 }
@@ -1375,10 +1374,18 @@ function openRecipeScan(recipe) {
 }
 
 function renderRestaurants() {
-  const sortedRestaurants = getSortedRestaurants();
+  document.querySelectorAll('body > [data-slot-tag-modal]').forEach(modal => modal.remove());
+  document.body.classList.remove('slot-tag-modal-open');
+
+  const savedRestaurants = state.restaurants.filter(restaurant => !restaurant.wantToGo);
   const wantToGoRestaurants = state.restaurants
     .filter(restaurant => restaurant.wantToGo)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+  const sortedRestaurants = getSortedRestaurants(savedRestaurants);
+  const showingWantToGo = state.restaurantListView === 'want';
+  const visibleCount = showingWantToGo ? wantToGoRestaurants.length : sortedRestaurants.length;
+  const hasHomeLocation = hasHouseholdHomeCoordinates();
+
   pageRoot.innerHTML = `
     <section class="grid two">
       <form id="restaurant-form" class="form-card">
@@ -1425,6 +1432,16 @@ function renderRestaurants() {
                 <option value="5">★★★★★</option>
               </select>
             </label>
+            <label class="slot-select-control">Max Distance
+              <select name="maxDistance" ${hasHomeLocation ? '' : 'disabled'}>
+                <option value="">${hasHomeLocation ? 'Any' : 'Add home address'}</option>
+                <option value="5">5 miles</option>
+                <option value="10">10 miles</option>
+                <option value="15">15 miles</option>
+                <option value="25">25 miles</option>
+                <option value="50">50 miles</option>
+              </select>
+            </label>
           </div>
           ${restaurantRandomFilterGroups()}
           <button class="primary slot-spin-btn" type="submit">Spin</button>
@@ -1434,32 +1451,37 @@ function renderRestaurants() {
         </div>
       </article>
     </section>
-    <section class="card want-to-go-section">
-      <div class="section-head restaurant-list-head">
-        <div>
-          <h3>Want To Go</h3>
-          <p class="muted">${wantToGoRestaurants.length} saved ${wantToGoRestaurants.length === 1 ? 'spot' : 'spots'}</p>
-        </div>
-      </div>
-      <div class="want-to-go-list">
-        ${wantToGoRestaurants.length ? wantToGoRestaurants.map(wantToGoRestaurantItem).join('') : '<div class="empty compact">Mark restaurants as Want To Go to build this list.</div>'}
-      </div>
-    </section>
     <section class="card restaurant-list-section">
       <div class="section-head restaurant-list-head">
         <div>
-          <h3>Saved Restaurants</h3>
-          <p class="muted">${state.restaurants.length} saved ${state.restaurants.length === 1 ? 'spot' : 'spots'}</p>
+          <h3>${showingWantToGo ? 'Want To' : 'Saved Restaurants'}</h3>
+          <p class="muted">${visibleCount} saved ${visibleCount === 1 ? 'spot' : 'spots'}</p>
         </div>
-        <label class="compact-control restaurant-sort-control">Sort
-          <select id="restaurant-sort-select" name="restaurantSort">
-            ${restaurantSortOptions()}
-          </select>
-        </label>
+        <div class="restaurant-list-tools">
+          <div class="restaurant-view-toggle" role="group" aria-label="Restaurant list view">
+            <button class="${showingWantToGo ? '' : 'active'}" type="button" data-restaurant-list-view="saved">Saved</button>
+            <button class="${showingWantToGo ? 'active' : ''}" type="button" data-restaurant-list-view="want">Want To</button>
+          </div>
+          ${showingWantToGo ? '' : `
+            <label class="compact-control restaurant-sort-control">Sort
+              <select id="restaurant-sort-select" name="restaurantSort">
+                ${restaurantSortOptions()}
+              </select>
+            </label>
+          `}
+        </div>
       </div>
-      <div class="restaurant-card-grid">
-        ${sortedRestaurants.length ? sortedRestaurants.map(restaurantItem).join('') : '<div class="empty">Add favorite restaurants to use the random selector.</div>'}
-      </div>
+      ${showingWantToGo ? `
+        <div class="want-to-go-list">
+          ${wantToGoRestaurants.length
+            ? wantToGoRestaurants.map(restaurant => String(state.editingRestaurantId) === String(restaurant._id) ? restaurantEditCard(restaurant) : wantToGoRestaurantItem(restaurant)).join('')
+            : '<div class="empty compact">Mark restaurants as Want To Go to build this list.</div>'}
+        </div>
+      ` : `
+        <div class="restaurant-card-grid">
+          ${sortedRestaurants.length ? sortedRestaurants.map(restaurantItem).join('') : '<div class="empty">Add a saved restaurant or switch to Want To.</div>'}
+        </div>
+      `}
     </section>
   `;
 
@@ -1486,6 +1508,16 @@ function renderRestaurants() {
   });
   bindSlotTagFilterModal(randomRestaurantForm);
 
+  pageRoot.querySelectorAll('[data-restaurant-list-view]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.restaurantListView = button.dataset.restaurantListView === 'want' ? 'want' : 'saved';
+      localStorage.setItem('mealPlannerRestaurantListView', state.restaurantListView);
+      state.editingRestaurantId = '';
+      state.openRestaurantMenuId = '';
+      renderRestaurants();
+    });
+  });
+
   $('#restaurant-sort-select')?.addEventListener('change', event => {
     state.restaurantSort = event.currentTarget.value;
     localStorage.setItem('mealPlannerRestaurantSort', state.restaurantSort);
@@ -1511,25 +1543,6 @@ function renderRestaurants() {
       } catch (error) {
         showToast(error.message || 'Unable to update favorite.');
         button.disabled = false;
-      }
-    });
-  });
-
-  pageRoot.querySelectorAll('[data-toggle-want-to-go]').forEach(input => {
-    input.addEventListener('click', event => event.stopPropagation());
-    input.addEventListener('change', async event => {
-      event.stopPropagation();
-      const restaurant = state.restaurants.find(item => String(item._id) === String(input.dataset.toggleWantToGo));
-      if (!restaurant) return;
-      input.disabled = true;
-      try {
-        await api(`/api/restaurants/${restaurant._id}`, { method: 'PUT', body: restaurantUpdateBody(restaurant, { wantToGo: input.checked }) });
-        await Promise.all([loadRestaurants(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
-        renderRestaurants();
-      } catch (error) {
-        showToast(error.message || 'Unable to update Want To Go.');
-        input.disabled = false;
-        input.checked = Boolean(restaurant.wantToGo);
       }
     });
   });
@@ -1789,7 +1802,9 @@ async function renderSettings() {
         </div>
         <form id="household-name-form" class="invite-form household-name-form">
           <label>Household Name<input name="name" type="text" maxlength="80" required value="${escapeAttr(data.household.name || '')}" /></label>
-          <button class="secondary full" type="submit"><i class="ti ti-home-edit"></i>Save Household Name</button>
+          <label>Home Address<input name="homeAddress" type="text" maxlength="220" placeholder="Street, city, state, ZIP" value="${escapeAttr(data.household.homeAddress || '')}" /></label>
+          <p class="muted household-distance-help">Used to calculate approximate distance to saved restaurants.</p>
+          <button class="secondary full" type="submit"><i class="ti ti-home-edit"></i>Save Household Details</button>
         </form>
       </article>
       <article class="card">
@@ -1882,13 +1897,16 @@ async function renderSettings() {
     event.preventDefault();
     const form = event.currentTarget;
     await withSaveFeedback(form, async () => {
-      const name = String(new FormData(form).get('name') || '').trim();
+      const formData = new FormData(form);
+      const name = String(formData.get('name') || '').trim();
+      const homeAddress = String(formData.get('homeAddress') || '').trim();
       if (!name) throw new Error('Enter a household name.');
-      const household = await api('/api/household', { method: 'PATCH', body: { name } });
+      const household = await api('/api/household', { method: 'PATCH', body: { name, homeAddress } });
       state.household = household;
       $('#household-name').textContent = household?.name || 'Meal Planner';
+      await loadRestaurants();
       await renderSettings();
-    }, 'Household name updated.');
+    }, 'Household details updated.');
   });
 
   pageRoot.querySelector('#email-invite-form')?.addEventListener('submit', async event => {
@@ -2078,40 +2096,51 @@ function slotCheckbox(name, value, label, ariaLabel = '') {
 function bindSlotTagFilterModal(form) {
   if (!form) return;
   const modal = form.querySelector('[data-slot-tag-modal]');
-  const card = form.closest('.random-restaurant-card');
   const count = form.querySelector('[data-tag-count]');
+  if (!modal) return;
+
+  document.body.appendChild(modal);
+
+  const tagInputs = () => [...modal.querySelectorAll('[name="tags"]')];
   const updateCount = () => {
     if (!count) return;
-    const selected = form.querySelectorAll('[name="tags"]:checked').length;
+    const selected = tagInputs().filter(input => input.checked).length;
     count.textContent = selected ? `${selected} selected` : '0 selected';
   };
   const close = () => {
-    if (!modal) return;
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
-    card?.classList.remove('slot-tag-modal-active');
+    document.body.classList.remove('slot-tag-modal-open');
   };
+  const open = () => {
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('slot-tag-modal-open');
+    requestAnimationFrame(() => modal.querySelector('[data-close-tag-filter]')?.focus());
+  };
+
   form.querySelector('[data-open-tag-filter]')?.addEventListener('click', event => {
     event.preventDefault();
-    modal?.classList.add('open');
-    modal?.setAttribute('aria-hidden', 'false');
-    card?.classList.add('slot-tag-modal-active');
+    open();
   });
-  form.querySelectorAll('[data-close-tag-filter]').forEach(button => {
+  modal.querySelectorAll('[data-close-tag-filter]').forEach(button => {
     button.addEventListener('click', event => {
       event.preventDefault();
       close();
     });
   });
-  form.querySelector('[data-clear-tag-filter]')?.addEventListener('click', event => {
+  modal.querySelector('[data-clear-tag-filter]')?.addEventListener('click', event => {
     event.preventDefault();
-    form.querySelectorAll('[name="tags"]').forEach(input => { input.checked = false; });
+    tagInputs().forEach(input => { input.checked = false; });
     updateCount();
   });
-  modal?.addEventListener('pointerdown', event => {
+  modal.addEventListener('pointerdown', event => {
     if (event.target === modal) close();
   });
-  form.querySelectorAll('[name="tags"]').forEach(input => input.addEventListener('change', updateCount));
+  modal.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  tagInputs().forEach(input => input.addEventListener('change', updateCount));
   updateCount();
 }
 
@@ -2139,11 +2168,14 @@ function slotMachinePlaceholder() {
 
 function getRandomRestaurantFilters(form) {
   const formData = new FormData(form);
+  const selectedTags = [...document.querySelectorAll('body > [data-slot-tag-modal] [name="tags"]:checked')]
+    .map(input => String(input.value || '').toLowerCase());
   return {
     maxPrice: String(formData.get('maxPrice') || ''),
     minRating: Number(formData.get('minRating') || 0),
+    maxDistance: Number(formData.get('maxDistance') || 0),
     cuisines: formData.getAll('cuisines').map(value => String(value).toLowerCase()),
-    tags: formData.getAll('tags').map(value => String(value).toLowerCase()),
+    tags: selectedTags,
     favoriteOnly: formData.get('favoriteOnly') === '1',
     wantToGoOnly: formData.get('wantToGoOnly') === '1'
   };
@@ -2163,6 +2195,10 @@ function getFilteredRandomRestaurants(filters) {
     if (filters.tags.length && !filters.tags.some(tag => tags.includes(tag))) return false;
     if (filters.favoriteOnly && !restaurant.favorite) return false;
     if (filters.wantToGoOnly && !restaurant.wantToGo) return false;
+    if (filters.maxDistance) {
+      const distance = Number(restaurant.distanceMiles);
+      if (!Number.isFinite(distance) || distance > filters.maxDistance) return false;
+    }
     return true;
   });
 }
@@ -2251,7 +2287,7 @@ function renderSlotMachinePick(restaurant, poolSize) {
       <div class="slot-pick-details">
         <div>
           <strong>${escapeHtml(restaurant.name || 'Restaurant')}</strong>
-          <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')} • ${escapeHtml(restaurant.priceLevel || '$$')} • ${starRating(restaurant.rating || 0)}</p>
+          <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')} • ${escapeHtml(restaurant.priceLevel || '$$')} • ${starRating(restaurant.rating || 0)}${restaurantDistanceText(restaurant) ? ` • ${escapeHtml(restaurantDistanceText(restaurant))}` : ''}</p>
         </div>
         <span class="badge accent">${poolSize} match${poolSize === 1 ? '' : 'es'}</span>
       </div>
@@ -2261,8 +2297,23 @@ function renderSlotMachinePick(restaurant, poolSize) {
   `;
 }
 
-function getSortedRestaurants() {
-  const items = [...state.restaurants];
+function hasHouseholdHomeCoordinates() {
+  const coordinates = state.household?.homeCoordinates;
+  return coordinates?.lat !== null && coordinates?.lat !== undefined && coordinates?.lat !== ''
+    && coordinates?.lng !== null && coordinates?.lng !== undefined && coordinates?.lng !== ''
+    && Number.isFinite(Number(coordinates.lat))
+    && Number.isFinite(Number(coordinates.lng));
+}
+
+function restaurantDistanceText(restaurant) {
+  if (restaurant?.distanceMiles === null || restaurant?.distanceMiles === undefined || restaurant?.distanceMiles === '') return '';
+  const distance = Number(restaurant.distanceMiles);
+  if (!Number.isFinite(distance)) return '';
+  return distance < 10 ? `${distance.toFixed(1)} mi` : `${Math.round(distance)} mi`;
+}
+
+function getSortedRestaurants(source = state.restaurants) {
+  const items = [...source];
   const sortMode = state.restaurantSort || 'favorite';
   const nameCompare = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
 
@@ -2290,10 +2341,12 @@ function restaurantSortOptions() {
 
 
 function wantToGoRestaurantItem(restaurant) {
+  const distance = restaurantDistanceText(restaurant);
   return `
-    <article class="want-to-go-item">
+    <article class="want-to-go-item" data-restaurant-card="${restaurant._id}">
       <strong>${escapeHtml(restaurant.name || 'Restaurant')}</strong>
       ${restaurant.location ? `<a href="${escapeAttr(mapLinkForAddress(restaurant.location))}" target="_blank" rel="noopener">${escapeHtml(restaurant.location)}</a>` : '<span class="muted">No location saved</span>'}
+      ${distance ? `<span class="restaurant-distance"><i class="ti ti-route"></i>${escapeHtml(distance)}</span>` : ''}
     </article>
   `;
 }
@@ -2310,10 +2363,6 @@ function restaurantItem(restaurant) {
           <h3>${escapeHtml(restaurant.name)}</h3>
           <p class="muted">${escapeHtml(restaurant.cuisine || 'Any cuisine')}</p>
           <p class="restaurant-price-line">${escapeHtml(restaurant.priceLevel || '$$')}</p>
-          <label class="restaurant-want-toggle">
-            <input type="checkbox" data-toggle-want-to-go="${restaurant._id}" ${restaurant.wantToGo ? 'checked' : ''} />
-            <span>Want To Go</span>
-          </label>
         </div>
         <div class="restaurant-card-controls">
           <button class="restaurant-favorite-btn ${restaurant.favorite ? 'active' : ''}" type="button" data-favorite-restaurant="${restaurant._id}" aria-label="${restaurant.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${restaurant.favorite ? 'true' : 'false'}">
@@ -2337,6 +2386,7 @@ function restaurantItem(restaurant) {
       ${dishes ? `<p><strong>Go-to:</strong> ${escapeHtml(dishes)}</p>` : ''}
       ${tags ? `<p class="muted">${escapeHtml(tags)}</p>` : ''}
       ${restaurant.location ? `<p class="restaurant-location"><a href="${escapeAttr(mapLinkForAddress(restaurant.location))}" target="_blank" rel="noopener">${escapeHtml(restaurant.location)}</a></p>` : ''}
+      ${restaurantDistanceText(restaurant) ? `<p class="restaurant-distance"><i class="ti ti-route"></i>${escapeHtml(restaurantDistanceText(restaurant))}</p>` : ''}
       ${restaurant.link ? `<p class="restaurant-link"><a href="${escapeAttr(normalizeExternalUrl(restaurant.link))}" target="_blank" rel="noopener">Open Link</a></p>` : ''}
       <p class="muted restaurant-visits">Visited ${restaurant.timesVisited || 0}x</p>
     </article>
@@ -2533,7 +2583,8 @@ function addMonths(isoDate, months) {
 
 function plannerStatusMarkup(status) {
   if (status === 'eaten') return '<span class="meal-checkmark" aria-label="Eaten" title="Eaten">✓</span>';
-  return `<span class="badge ${status === 'skipped' ? 'warn' : ''}">${escapeHtml(status || 'planned')}</span>`;
+  if (status === 'skipped') return '<span class="badge warn">skipped</span>';
+  return '';
 }
 
 function dateISO(date) {
