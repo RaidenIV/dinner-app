@@ -1331,7 +1331,7 @@ function openRecipeImportModal() {
               <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-              <label class="wide">Ingredients<textarea name="ingredientsText" placeholder="One ingredient per line"></textarea></label>
+              <label class="wide recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="9" placeholder="One ingredient per line"></textarea></label>
               <label class="wide">Instructions<textarea name="instructions" placeholder="Recipe steps"></textarea></label>
               <label class="wide">Import Notes<textarea name="importNotes" placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
@@ -1596,12 +1596,12 @@ function applyAiRecipeDraftToForm(form, draft) {
 function formatAiIngredientLine(ingredient) {
   const raw = String(ingredient?.raw || '').trim();
   const item = String(ingredient?.item || '').trim();
-  if (!item) return raw;
+  if (!item) return raw.replace(/\s*\|\s*Other\s*$/i, '').replace(/\s*\|\s*/g, ' ').trim();
   const quantity = String(ingredient?.quantity || '').trim();
   const unit = String(ingredient?.unit || '').trim();
   const notes = String(ingredient?.notes || '').trim();
   const namedItem = notes ? `${item} (${notes})` : item;
-  return `${quantity} | ${unit} | ${namedItem} | Other`;
+  return [quantity, unit, namedItem].filter(Boolean).join(' ');
 }
 
 function renderRecipeAiReview(review, meta) {
