@@ -10,7 +10,8 @@ It helps a household decide what to eat by combining a weekly breakfast/lunch/di
 - Shared household accounts with an invite code
 - Weekly planner with breakfast, lunch, and dinner slots
 - Recipe organizer with ingredients, instructions, tags, ratings, favorites, and usage tracking
-- Review-first AI cleanup for pasted OCR recipe text
+- Automatic AI text extraction from recipe photos and PDFs
+- Review-first AI cleanup for extracted, pasted, or typed recipe text
 - Restaurant organizer with cuisine, price, tags, favorite dishes, ratings, and visit tracking
 - Random restaurant selector with cuisine, tag, and price filters
 - Shared grocery list
@@ -25,6 +26,7 @@ It helps a household decide what to eat by combining a weekly breakfast/lunch/di
 - Frontend: HTML, CSS, JavaScript
 - Backend: Node.js, Express
 - Database: MongoDB with Mongoose
+- AI recipe scan OCR: OpenAI Responses API with image/PDF inputs
 - AI recipe cleanup: OpenAI Responses API with Structured Outputs
 - Auth: JWT + bcrypt password hashing
 - Hosting: Railway
@@ -74,7 +76,10 @@ PORT=3000
 NODE_ENV=development
 OPENAI_API_KEY=<your OpenAI API key>
 OPENAI_RECIPE_MODEL=gpt-5.6-luna
+OPENAI_RECIPE_OCR_MODEL=
+AI_RECIPE_OCR_ENABLED=true
 AI_RECIPE_CLEANUP_ENABLED=true
+AI_RECIPE_OCR_MAX_REQUESTS_PER_HOUR=20
 AI_RECIPE_MAX_REQUESTS_PER_HOUR=20
 ```
 
@@ -94,7 +99,10 @@ JWT_SECRET=<long random secret>
 NODE_ENV=production
 OPENAI_API_KEY=<your OpenAI API key>
 OPENAI_RECIPE_MODEL=gpt-5.6-luna
+OPENAI_RECIPE_OCR_MODEL=
+AI_RECIPE_OCR_ENABLED=true
 AI_RECIPE_CLEANUP_ENABLED=true
+AI_RECIPE_OCR_MAX_REQUESTS_PER_HOUR=20
 AI_RECIPE_MAX_REQUESTS_PER_HOUR=20
 ```
 
@@ -106,23 +114,23 @@ Railway should detect the Node app and run:
 npm start
 ```
 
-## AI Recipe Cleanup
+## AI Recipe Scan Import
 
-The Recipe Import Assistant includes a review-first **Clean Up With AI** action. The current implementation is Phase 1 of the integration:
+The Recipe Import Assistant now supports a review-first scan workflow:
 
 1. Open **Recipes**.
 2. Click **Import Printed Recipe**.
-3. Paste OCR text or type the printed recipe into the text area.
-4. Click **Clean Up With AI**.
-5. Review the generated recipe fields, confidence score, warnings, and unclear fields.
-6. Edit anything that needs correction.
-7. Save the recipe only after review.
+3. Take a photo or upload a JPG, PNG, WEBP, GIF, or PDF recipe scan.
+4. HomePlate automatically extracts the visible recipe text into the editable text area.
+5. Review and correct the extracted text. Use **Extract Text From Scan** to retry when needed.
+6. Click **Clean Up With AI**.
+7. Review the generated recipe fields, confidence score, warnings, and unclear fields.
+8. Edit anything that needs correction.
+9. Save the recipe only after review.
 
-The AI endpoint is authenticated, keeps the API key on the server, limits raw text to 15,000 characters, and applies a configurable per-user hourly request limit. AI results are never saved automatically.
+The scan endpoint and cleanup endpoint are both authenticated and keep the OpenAI API key on the server. Image and PDF payloads are size-limited, extracted text is limited to 15,000 characters, and scan extraction and cleanup each have configurable per-user hourly request limits. Neither OCR nor AI cleanup saves a recipe automatically.
 
-Photo/PDF uploads are still attached as the original scan, but this phase does **not** automatically OCR those files. Paste OCR text into the import text area for AI cleanup. Automatic image/PDF OCR can be added as the next phase.
-
-If `OPENAI_API_KEY` is missing or AI cleanup is disabled, the app continues to support the existing **Fill From Text** and manual import flow.
+`OPENAI_RECIPE_OCR_MODEL` is optional. Leave it blank to use the same model configured in `OPENAI_RECIPE_MODEL`. The existing manual text-paste and **Fill From Text** workflows remain available when a scan is unreadable or AI is disabled.
 
 ## First Use
 

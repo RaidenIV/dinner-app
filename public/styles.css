@@ -3225,6 +3225,40 @@ body.mobile-drawer-open .panel-edge-toggle {
   color: var(--text-tertiary);
 }
 
+.recipe-ocr-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.recipe-ocr-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.recipe-ocr-status {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.recipe-ocr-status.loading {
+  color: var(--brand);
+}
+
+.recipe-ocr-status.success {
+  color: #126b0d;
+}
+
+.recipe-ocr-status.error {
+  color: var(--danger);
+}
+
 .recipe-import-actions {
   justify-content: flex-start;
 }
@@ -3413,6 +3447,17 @@ body.mobile-drawer-open .panel-edge-toggle {
 
   .recipe-import-upload {
     grid-template-columns: 1fr;
+  }
+
+  .recipe-ocr-controls {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .recipe-ocr-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .recipe-import-actions {
@@ -5557,5 +5602,19 @@ body > .slot-tag-modal .slot-tag-modal-card {
 @media (max-width: 620px) {
   .history-display-controls {
     grid-template-columns: 1fr;
+  }
+}
+
+
+/* AI recipe import ingredient readability */
+.recipe-import-fields .recipe-import-ingredients-field textarea {
+  min-height: 240px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+@media (max-width: 700px) {
+  .recipe-import-fields .recipe-import-ingredients-field textarea {
+    min-height: 280px;
   }
 }

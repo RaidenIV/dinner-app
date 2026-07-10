@@ -42,6 +42,8 @@ const state = {
 
 let recipeImportScan = { dataUrl: '', name: '', type: '' };
 let recipeImportAiMeta = null;
+let recipeImportOcrInFlight = false;
+let recipeImportOcrRequestId = 0;
 
 const $ = selector => document.querySelector(selector);
 const pageRoot = $('#page-root');
@@ -1280,6 +1282,8 @@ function openRecipeImportModal() {
   closeMobileWebSidebarForModal();
   recipeImportScan = { dataUrl: '', name: '', type: '' };
   recipeImportAiMeta = null;
+  recipeImportOcrInFlight = false;
+  recipeImportOcrRequestId += 1;
   document.querySelector('.recipe-import-overlay')?.remove();
   document.body.classList.add('modal-open');
 
@@ -1290,7 +1294,7 @@ function openRecipeImportModal() {
       <header class="time-modal-header">
         <div>
           <h3 id="recipe-import-title">Import Printed Recipe</h3>
-          <p class="muted">Upload a scan, paste extracted text, then use AI to create an editable recipe draft.</p>
+          <p class="muted">Upload or take a photo to extract the recipe text automatically, then use AI to create an editable draft.</p>
         </div>
         <button class="secondary modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
       </header>
@@ -1302,8 +1306,12 @@ function openRecipeImportModal() {
                 <input id="recipe-import-file" name="recipeFile" type="file" accept="image/*,application/pdf" capture="environment" />
               </label>
               <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
+              <div class="recipe-ocr-controls">
+                <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
+                <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+              </div>
             </div>
-            <label class="wide">Extracted or Typed Text <span class="optional">paste OCR text here; AI cleanup does not save automatically</span><textarea name="importText" maxlength="15000" placeholder="Paste detected recipe text, or type from the printed page."></textarea></label>
+            <label class="wide">Extracted or Typed Text <span class="optional">review the extracted text before AI cleanup; nothing saves automatically</span><textarea name="importText" maxlength="15000" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it."></textarea></label>
             <section class="recipe-ai-callout" aria-labelledby="recipe-ai-title">
               <div>
                 <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
@@ -1356,6 +1364,7 @@ function openRecipeImportModal() {
   overlay.querySelectorAll('[data-close-recipe-import]').forEach(button => button.addEventListener('click', closeRecipeImportModal));
   overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
+  overlay.querySelector('#recipe-import-ocr')?.addEventListener('click', () => extractRecipeTextFromScan(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-form')?.addEventListener('submit', saveImportedRecipe);
@@ -1363,6 +1372,8 @@ function openRecipeImportModal() {
 
 function closeRecipeImportModal() {
   recipeImportAiMeta = null;
+  recipeImportOcrInFlight = false;
+  recipeImportOcrRequestId += 1;
   const overlay = document.querySelector('.recipe-import-overlay');
   if (!overlay) return;
   overlay.classList.remove('open');
@@ -1377,6 +1388,7 @@ async function handleRecipeImportFile(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
   const preview = document.querySelector('#recipe-import-preview');
+  const form = document.querySelector('#recipe-import-form');
   try {
     recipeImportScan = await recipeSourceFileToDataUrl(file);
     if (preview) {
@@ -1385,26 +1397,109 @@ async function handleRecipeImportFile(event) {
         ? `<img src="${escapeAttr(recipeImportScan.dataUrl)}" alt="Uploaded recipe scan" /><span>${escapeHtml(recipeImportScan.name)}</span>`
         : `<div><i class="ti ti-file-type-pdf"></i><strong>${escapeHtml(recipeImportScan.name)}</strong><p class="muted">PDF scan attached.</p></div>`;
     }
-    const nameInput = document.querySelector('#recipe-import-form [name="name"]');
+    const nameInput = form?.elements?.name;
     if (nameInput && !nameInput.value.trim()) nameInput.value = titleFromFileName(file.name);
+    updateRecipeOcrControls(form, { state: 'ready', message: 'Scan ready. Extracting text automatically…' });
+    await extractRecipeTextFromScan(form, { automatic: true });
   } catch (error) {
     recipeImportScan = { dataUrl: '', name: '', type: '' };
     if (preview) {
       preview.classList.add('empty');
       preview.textContent = 'No scan selected.';
     }
+    updateRecipeOcrControls(form, { state: 'error', message: error.message || 'Unable to read recipe scan.' });
     showToast(error.message || 'Unable to read recipe scan.');
   }
 }
 
 function clearRecipeImportScan() {
   recipeImportScan = { dataUrl: '', name: '', type: '' };
+  recipeImportOcrInFlight = false;
+  recipeImportOcrRequestId += 1;
   const fileInput = document.querySelector('#recipe-import-file');
   const preview = document.querySelector('#recipe-import-preview');
+  const form = document.querySelector('#recipe-import-form');
   if (fileInput) fileInput.value = '';
   if (preview) {
     preview.classList.add('empty');
     preview.textContent = 'No scan selected.';
+  }
+  updateRecipeOcrControls(form, { state: 'empty', message: 'Choose a photo or PDF to extract its text.' });
+}
+
+function updateRecipeOcrControls(form, { state = 'ready', message = '' } = {}) {
+  const button = form?.querySelector?.('#recipe-import-ocr');
+  const status = form?.querySelector?.('#recipe-import-ocr-status');
+  const hasScan = Boolean(recipeImportScan.dataUrl);
+  const isLoading = state === 'loading';
+
+  if (button) {
+    button.disabled = !hasScan || isLoading;
+    button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    button.innerHTML = isLoading
+      ? '<i class="ti ti-loader-2 recipe-ai-spinner"></i>Extracting Text…'
+      : '<i class="ti ti-scan"></i>Extract Text From Scan';
+  }
+  if (status) {
+    status.className = `recipe-ocr-status ${state}`;
+    status.textContent = message;
+  }
+}
+
+async function extractRecipeTextFromScan(form, { automatic = false } = {}) {
+  if (!form || recipeImportOcrInFlight) return;
+  if (!recipeImportScan.dataUrl) {
+    showToast('Choose a recipe photo or PDF first.');
+    return;
+  }
+
+  recipeImportOcrInFlight = true;
+  const requestId = ++recipeImportOcrRequestId;
+  const scanSnapshot = { ...recipeImportScan };
+  updateRecipeOcrControls(form, {
+    state: 'loading',
+    message: scanSnapshot.type === 'application/pdf'
+      ? 'Reading the PDF and extracting its recipe text…'
+      : 'Reading the photo and extracting its recipe text…'
+  });
+
+  try {
+    const result = await api('/api/recipes/import/ocr', {
+      method: 'POST',
+      body: {
+        scanData: scanSnapshot.dataUrl,
+        filename: scanSnapshot.name,
+        mimeType: scanSnapshot.type
+      }
+    });
+    if (requestId !== recipeImportOcrRequestId || scanSnapshot.dataUrl !== recipeImportScan.dataUrl) return;
+    const rawText = String(result.rawText || '').trim();
+    if (!rawText) throw new Error('No readable recipe text was returned.');
+    if (form.elements.importText) form.elements.importText.value = rawText;
+    recipeImportAiMeta = null;
+    resetRecipeAiReview(form);
+    updateRecipeOcrControls(form, {
+      state: 'success',
+      message: 'Text extracted. Review it below, then select Clean Up With AI.'
+    });
+    showToast('Recipe text extracted. Review it before AI cleanup.');
+  } catch (error) {
+    if (requestId !== recipeImportOcrRequestId) return;
+    updateRecipeOcrControls(form, {
+      state: 'error',
+      message: error.message || 'Text extraction failed. Try a clearer photo or paste the text manually.'
+    });
+    if (!automatic) showToast(error.message || 'Recipe text extraction failed.');
+    else showToast('Text extraction failed. You can retry or paste the recipe text manually.');
+  } finally {
+    if (requestId !== recipeImportOcrRequestId) return;
+    recipeImportOcrInFlight = false;
+    const status = form.querySelector('#recipe-import-ocr-status');
+    const statusState = status?.classList.contains('success') ? 'success' : status?.classList.contains('error') ? 'error' : 'ready';
+    updateRecipeOcrControls(form, {
+      state: statusState,
+      message: status?.textContent || 'Scan ready.'
+    });
   }
 }
 
