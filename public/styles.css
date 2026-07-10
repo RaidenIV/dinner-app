@@ -3180,6 +3180,42 @@ body.mobile-drawer-open .panel-edge-toggle {
   align-items: stretch;
 }
 
+.recipe-import-source-picker {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--border-mid);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.recipe-import-source-label {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recipe-import-source-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.recipe-import-source-actions button {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+.recipe-import-source-help {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .recipe-import-preview {
   min-height: 112px;
   display: grid;
@@ -3447,6 +3483,14 @@ body.mobile-drawer-open .panel-edge-toggle {
 
   .recipe-import-upload {
     grid-template-columns: 1fr;
+  }
+
+  .recipe-import-source-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-import-source-actions button {
+    min-height: 44px;
   }
 
   .recipe-ocr-controls {

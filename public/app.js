@@ -1302,9 +1302,16 @@ function openRecipeImportModal() {
         <div class="time-modal-body-inner">
           <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
             <div class="recipe-import-upload">
-              <label class="wide">Recipe Photo or PDF
-                <input id="recipe-import-file" name="recipeFile" type="file" accept="image/*,application/pdf" capture="environment" />
-              </label>
+              <div class="recipe-import-source-picker">
+                <span class="recipe-import-source-label">Recipe Photo or PDF</span>
+                <div class="recipe-import-source-actions">
+                  <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
+                  <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
+                </div>
+                <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
+                <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+                <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
+              </div>
               <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
               <div class="recipe-ocr-controls">
                 <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
@@ -1362,6 +1369,9 @@ function openRecipeImportModal() {
     if (event.target === overlay) closeRecipeImportModal();
   });
   overlay.querySelectorAll('[data-close-recipe-import]').forEach(button => button.addEventListener('click', closeRecipeImportModal));
+  overlay.querySelector('#recipe-import-camera')?.addEventListener('click', () => overlay.querySelector('#recipe-import-camera-file')?.click());
+  overlay.querySelector('#recipe-import-upload')?.addEventListener('click', () => overlay.querySelector('#recipe-import-file')?.click());
+  overlay.querySelector('#recipe-import-camera-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
   overlay.querySelector('#recipe-import-ocr')?.addEventListener('click', () => extractRecipeTextFromScan(overlay.querySelector('#recipe-import-form')));
@@ -1389,6 +1399,7 @@ async function handleRecipeImportFile(event) {
   if (!file) return;
   const preview = document.querySelector('#recipe-import-preview');
   const form = document.querySelector('#recipe-import-form');
+  updateRecipeOcrControls(form, { state: 'loading', message: 'Preparing and optimizing the scan…' });
   try {
     recipeImportScan = await recipeSourceFileToDataUrl(file);
     if (preview) {
@@ -1417,9 +1428,11 @@ function clearRecipeImportScan() {
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
   const fileInput = document.querySelector('#recipe-import-file');
+  const cameraInput = document.querySelector('#recipe-import-camera-file');
   const preview = document.querySelector('#recipe-import-preview');
   const form = document.querySelector('#recipe-import-form');
   if (fileInput) fileInput.value = '';
+  if (cameraInput) cameraInput.value = '';
   if (preview) {
     preview.classList.add('empty');
     preview.textContent = 'No scan selected.';
@@ -1734,26 +1747,49 @@ async function recipeSourceFileToDataUrl(file) {
   const image = await new Promise((resolve, reject) => {
     const source = new Image();
     source.onload = () => resolve(source);
-    source.onerror = () => reject(new Error('Unable to process the selected image.'));
+    source.onerror = () => reject(new Error('Unable to process this image format. Try choosing a JPG, PNG, or a new camera photo.'));
     source.src = rawDataUrl;
   });
 
-  const maxEdge = 1400;
-  const width = image.naturalWidth || image.width || 1;
-  const height = image.naturalHeight || image.height || 1;
-  const scale = Math.min(1, maxEdge / Math.max(width, height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  const context = canvas.getContext('2d', { alpha: false });
-  if (!context) return { dataUrl: rawDataUrl, name: file.name, type: file.type };
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  let optimized = canvas.toDataURL('image/webp', 0.82);
-  if (!optimized || optimized === 'data:,') optimized = canvas.toDataURL('image/jpeg', 0.82);
-  if (optimized.length > 1500000) throw new Error('Recipe scan is too large. Please crop the photo or use a smaller image.');
-  return { dataUrl: optimized, name: file.name, type: file.type };
+  const sourceWidth = image.naturalWidth || image.width || 1;
+  const sourceHeight = image.naturalHeight || image.height || 1;
+  const targetDataUrlLength = 1450000;
+  const edgeSteps = [1800, 1600, 1400, 1200, 1000, 850, 700];
+  const qualitySteps = [0.84, 0.74, 0.64, 0.54, 0.46];
+  let smallestResult = '';
+
+  for (const maxEdge of edgeSteps) {
+    const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) break;
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    for (const quality of qualitySteps) {
+      let optimized = canvas.toDataURL('image/webp', quality);
+      if (!optimized || optimized === 'data:,') optimized = canvas.toDataURL('image/jpeg', quality);
+      if (!optimized || optimized === 'data:,') continue;
+      if (!smallestResult || optimized.length < smallestResult.length) smallestResult = optimized;
+      if (optimized.length <= targetDataUrlLength) {
+        const optimizedType = optimized.match(/^data:([^;,]+)[;,]/i)?.[1] || 'image/jpeg';
+        return { dataUrl: optimized, name: file.name, type: optimizedType };
+      }
+    }
+  }
+
+  if (smallestResult && smallestResult.length <= 1600000) {
+    const optimizedType = smallestResult.match(/^data:([^;,]+)[;,]/i)?.[1] || 'image/jpeg';
+    return { dataUrl: smallestResult, name: file.name, type: optimizedType };
+  }
+
+  throw new Error('HomePlate could not optimize this photo enough for upload. Try cropping tightly around the recipe or choose a lower-resolution copy.');
 }
 
 function fileToDataUrl(file) {
