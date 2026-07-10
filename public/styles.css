@@ -3229,6 +3229,162 @@ body.mobile-drawer-open .panel-edge-toggle {
   justify-content: flex-start;
 }
 
+
+.recipe-ai-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--brand-border);
+  border-radius: 14px;
+  background: var(--brand-light);
+}
+
+.recipe-ai-callout > div {
+  min-width: 0;
+}
+
+.recipe-ai-callout strong,
+.recipe-ai-review-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.recipe-ai-callout p,
+.recipe-ai-review-head p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.recipe-ai-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.recipe-ai-spinner {
+  animation: recipe-ai-spin 0.8s linear infinite;
+}
+
+@keyframes recipe-ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+.recipe-ai-review {
+  padding: 14px 16px;
+  border: 1px solid var(--brand-border);
+  border-radius: 14px;
+  background: var(--white);
+  box-shadow: 0 8px 24px rgba(17, 17, 17, 0.06);
+}
+
+.recipe-ai-review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recipe-ai-confidence {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.recipe-ai-confidence.good {
+  background: rgba(30, 240, 18, 0.18);
+  color: #126b0d;
+}
+
+.recipe-ai-confidence.medium {
+  background: rgba(241, 196, 15, 0.18);
+  color: #765d00;
+}
+
+.recipe-ai-confidence.low {
+  background: rgba(229, 62, 62, 0.12);
+  color: var(--danger);
+}
+
+.recipe-ai-warning-block {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(241, 196, 15, 0.34);
+  border-radius: 10px;
+  background: rgba(241, 196, 15, 0.08);
+}
+
+.recipe-ai-warning-block > strong,
+.recipe-ai-unclear strong {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.recipe-ai-warning-block ul {
+  margin: 7px 0 0 18px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.recipe-ai-unclear,
+.recipe-ai-no-warnings {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.recipe-ai-no-warnings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #126b0d;
+  font-weight: 700;
+}
+
+.recipe-ai-loading,
+.recipe-ai-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.recipe-ai-loading .ti,
+.recipe-ai-error .ti {
+  flex: 0 0 auto;
+  color: var(--brand);
+  font-size: 18px;
+}
+
+.recipe-ai-error .ti,
+.recipe-ai-error strong {
+  color: var(--danger);
+}
+
+.recipe-ai-error p {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 @media (max-width: 780px) {
   .form-heading-row {
     align-items: stretch;
@@ -3261,6 +3417,21 @@ body.mobile-drawer-open .panel-edge-toggle {
 
   .recipe-import-actions {
     grid-template-columns: 1fr;
+  }
+
+  .recipe-ai-callout,
+  .recipe-ai-review-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recipe-ai-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .recipe-ai-confidence {
+    align-self: flex-start;
   }
 
   .item-actions {

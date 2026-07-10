@@ -41,6 +41,7 @@ const state = {
 };
 
 let recipeImportScan = { dataUrl: '', name: '', type: '' };
+let recipeImportAiMeta = null;
 
 const $ = selector => document.querySelector(selector);
 const pageRoot = $('#page-root');
@@ -1278,6 +1279,7 @@ function renderRecipes() {
 function openRecipeImportModal() {
   closeMobileWebSidebarForModal();
   recipeImportScan = { dataUrl: '', name: '', type: '' };
+  recipeImportAiMeta = null;
   document.querySelector('.recipe-import-overlay')?.remove();
   document.body.classList.add('modal-open');
 
@@ -1288,7 +1290,7 @@ function openRecipeImportModal() {
       <header class="time-modal-header">
         <div>
           <h3 id="recipe-import-title">Import Printed Recipe</h3>
-          <p class="muted">Upload a photo or PDF, review the details, then save it to your recipe library.</p>
+          <p class="muted">Upload a scan, paste extracted text, then use AI to create an editable recipe draft.</p>
         </div>
         <button class="secondary modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
       </header>
@@ -1301,7 +1303,15 @@ function openRecipeImportModal() {
               </label>
               <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
             </div>
-            <label class="wide">Extracted or Typed Text <span class="optional">paste OCR text here if you have it</span><textarea name="importText" placeholder="Paste detected recipe text, or type from the printed page."></textarea></label>
+            <label class="wide">Extracted or Typed Text <span class="optional">paste OCR text here; AI cleanup does not save automatically</span><textarea name="importText" maxlength="15000" placeholder="Paste detected recipe text, or type from the printed page."></textarea></label>
+            <section class="recipe-ai-callout" aria-labelledby="recipe-ai-title">
+              <div>
+                <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
+                <p>Turn messy OCR text into an editable recipe draft. Review every field before saving.</p>
+              </div>
+              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles"></i>Clean Up With AI</button>
+            </section>
+            <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
             <div class="action-row recipe-import-actions">
               <button class="secondary" id="recipe-import-parse" type="button"><i class="ti ti-wand"></i>Fill From Text</button>
               <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
@@ -1323,12 +1333,13 @@ function openRecipeImportModal() {
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
               <label class="wide">Ingredients<textarea name="ingredientsText" placeholder="One ingredient per line"></textarea></label>
               <label class="wide">Instructions<textarea name="instructions" placeholder="Recipe steps"></textarea></label>
-              <label class="wide">Import Notes<input name="importNotes" placeholder="Binder page, handwritten note, source, etc." /></label>
+              <label class="wide">Import Notes<textarea name="importNotes" placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
             <div class="modal-actions action-row">
               <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
-              <button class="primary" type="submit">Save Imported Recipe</button>
+              <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
+              <button class="primary" type="submit" data-recipe-import-save>Save Imported Recipe</button>
             </div>
           </form>
         </div>
@@ -1346,10 +1357,12 @@ function openRecipeImportModal() {
   overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
   overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
+  overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-form')?.addEventListener('submit', saveImportedRecipe);
 }
 
 function closeRecipeImportModal() {
+  recipeImportAiMeta = null;
   const overlay = document.querySelector('.recipe-import-overlay');
   if (!overlay) return;
   overlay.classList.remove('open');
@@ -1397,6 +1410,8 @@ function clearRecipeImportScan() {
 
 function fillRecipeImportFromText(form) {
   if (!form) return;
+  recipeImportAiMeta = null;
+  resetRecipeAiReview(form);
   const text = form.elements.importText?.value || '';
   const parsed = parseImportedRecipeText(text, recipeImportScan.name);
   if (parsed.name && !form.elements.name.value.trim()) form.elements.name.value = parsed.name;
@@ -1410,7 +1425,17 @@ function fillRecipeImportFromText(form) {
 async function saveImportedRecipe(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
-  await withSaveFeedback(formElement, async () => {
+  const keepOpen = event.submitter?.dataset.saveAnother === '1';
+  const saveButtons = [...formElement.querySelectorAll('[data-recipe-import-save]')];
+  const originalButtonHtml = saveButtons.map(button => button.innerHTML);
+
+  saveButtons.forEach(button => {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = 'Saving...';
+  });
+
+  try {
     const body = formToBody(formElement);
     delete body.recipeFile;
     delete body.importText;
@@ -1421,11 +1446,183 @@ async function saveImportedRecipe(event) {
     body.originalScan = recipeImportScan.dataUrl;
     body.originalScanName = recipeImportScan.name;
     body.importSource = 'printed';
+    body.ocrText = String(formElement.elements.importText?.value || '').trim().slice(0, 15000);
+    body.aiCleaned = Boolean(recipeImportAiMeta);
+    body.aiModel = recipeImportAiMeta?.model || '';
+    body.aiConfidence = Number(recipeImportAiMeta?.confidence || 0);
+    body.aiWarnings = recipeImportAiMeta?.warnings || [];
+    body.aiUnclearFields = recipeImportAiMeta?.unclearFields || [];
+
+    if (!String(body.ingredientsText || '').trim() && !String(body.instructions || '').trim()) {
+      throw new Error('Add at least one ingredient or instruction before saving.');
+    }
+
     await api('/api/recipes', { method: 'POST', body });
     await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
-    closeRecipeImportModal();
-    renderRecipes();
-  }, 'Printed recipe imported.');
+
+    if (keepOpen) {
+      resetRecipeImportForm(formElement);
+      showToast('Recipe imported. Ready for the next binder page.');
+    } else {
+      closeRecipeImportModal();
+      renderRecipes();
+      showToast('Printed recipe imported.');
+    }
+  } catch (error) {
+    showToast(error.message || 'Recipe import failed. Please try again.');
+  } finally {
+    saveButtons.forEach((button, index) => {
+      if (!button.isConnected) return;
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = originalButtonHtml[index];
+    });
+  }
+}
+
+function resetRecipeImportForm(form) {
+  if (!form) return;
+  form.reset();
+  recipeImportAiMeta = null;
+  clearRecipeImportScan();
+  resetRecipeAiReview(form);
+  form.elements.importText?.focus();
+}
+
+function resetRecipeAiReview(form) {
+  const review = form?.querySelector?.('#recipe-import-ai-review') || document.querySelector('#recipe-import-ai-review');
+  if (!review) return;
+  review.classList.add('hidden');
+  review.innerHTML = '';
+}
+
+async function cleanRecipeImportWithAi(form) {
+  if (!form) return;
+  const rawText = String(form.elements.importText?.value || '').trim();
+  if (rawText.length < 20) {
+    showToast('Paste at least a few lines of recipe text before using AI cleanup.');
+    form.elements.importText?.focus();
+    return;
+  }
+
+  const button = form.querySelector('#recipe-import-ai');
+  const review = form.querySelector('#recipe-import-ai-review');
+  const originalHtml = button?.innerHTML;
+  recipeImportAiMeta = null;
+
+  if (button) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<i class="ti ti-loader-2 recipe-ai-spinner"></i>Cleaning Recipe...';
+  }
+  if (review) {
+    review.classList.remove('hidden');
+    review.innerHTML = '<div class="recipe-ai-loading"><i class="ti ti-sparkles"></i><span>Reading the recipe and building an editable draft…</span></div>';
+  }
+
+  try {
+    const preferredMealType = String(form.elements.mealTypes?.value || '')
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .find(value => ['breakfast', 'lunch', 'dinner', 'snack', 'dessert'].includes(value)) || '';
+
+    const result = await api('/api/recipes/import/ai-cleanup', {
+      method: 'POST',
+      body: {
+        rawText,
+        filename: recipeImportScan.name,
+        notes: form.elements.importNotes?.value || '',
+        preferredMealType
+      }
+    });
+
+    applyAiRecipeDraftToForm(form, result.draft || {});
+    recipeImportAiMeta = {
+      model: result.model || '',
+      confidence: Number(result.confidence || 0),
+      warnings: Array.isArray(result.warnings) ? result.warnings : [],
+      unclearFields: Array.isArray(result.unclearFields) ? result.unclearFields : []
+    };
+    renderRecipeAiReview(review, recipeImportAiMeta);
+    showToast(recipeImportAiMeta.confidence < 0.65
+      ? 'AI cleanup finished with uncertainties. Review the warnings before saving.'
+      : 'AI cleanup finished. Review the draft before saving.');
+  } catch (error) {
+    recipeImportAiMeta = null;
+    if (review) {
+      review.classList.remove('hidden');
+      review.innerHTML = `<div class="recipe-ai-error"><i class="ti ti-alert-circle"></i><div><strong>AI cleanup unavailable</strong><p>${escapeHtml(error.message || 'Try again or use Fill From Text.')}</p></div></div>`;
+    }
+    showToast(error.message || 'AI cleanup failed.');
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = originalHtml;
+    }
+  }
+}
+
+function applyAiRecipeDraftToForm(form, draft) {
+  if (!form) return;
+  if (form.elements.name) form.elements.name.value = draft.name || form.elements.name.value || '';
+  if (form.elements.cuisine) form.elements.cuisine.value = draft.cuisine || '';
+  if (form.elements.mealTypes) form.elements.mealTypes.value = (draft.mealTypes || []).join(', ') || 'dinner';
+  if (form.elements.tags) form.elements.tags.value = (draft.tags || []).join(', ');
+  setDurationInputs(form, 'importPrep', draft.prepTimeMinutes || 0);
+  if (form.elements.cookTime) form.elements.cookTime.value = String(Math.max(0, Math.round(Number(draft.cookTimeMinutes) || 0)));
+  if (form.elements.difficulty) form.elements.difficulty.value = String(draft.difficulty || 'Easy').toLowerCase();
+
+  if (form.elements.ingredientsText) {
+    form.elements.ingredientsText.value = (draft.ingredients || []).map(formatAiIngredientLine).filter(Boolean).join('\n');
+  }
+  if (form.elements.instructions) {
+    form.elements.instructions.value = (draft.instructions || [])
+      .filter(step => String(step?.text || '').trim())
+      .map((step, index) => `${Number(step.stepNumber) || index + 1}. ${String(step.text || '').trim()}`)
+      .join('\n');
+  }
+  if (form.elements.importNotes) {
+    const details = [
+      draft.description ? `Description: ${draft.description}` : '',
+      draft.servings ? `Servings: ${draft.servings}` : '',
+      draft.temperature ? `Temperature: ${draft.temperature}` : '',
+      draft.notes || ''
+    ].filter(Boolean);
+    form.elements.importNotes.value = details.join('\n');
+  }
+}
+
+function formatAiIngredientLine(ingredient) {
+  const raw = String(ingredient?.raw || '').trim();
+  const item = String(ingredient?.item || '').trim();
+  if (!item) return raw;
+  const quantity = String(ingredient?.quantity || '').trim();
+  const unit = String(ingredient?.unit || '').trim();
+  const notes = String(ingredient?.notes || '').trim();
+  const namedItem = notes ? `${item} (${notes})` : item;
+  return `${quantity} | ${unit} | ${namedItem} | Other`;
+}
+
+function renderRecipeAiReview(review, meta) {
+  if (!review) return;
+  const confidence = Math.max(0, Math.min(100, Math.round((Number(meta.confidence) || 0) * 100)));
+  const warnings = Array.isArray(meta.warnings) ? meta.warnings : [];
+  const unclearFields = Array.isArray(meta.unclearFields) ? meta.unclearFields : [];
+  const confidenceClass = confidence >= 80 ? 'good' : confidence >= 60 ? 'medium' : 'low';
+
+  review.classList.remove('hidden');
+  review.innerHTML = `
+    <div class="recipe-ai-review-head">
+      <div>
+        <strong><i class="ti ti-sparkles"></i>AI Draft Ready</strong>
+        <p>Review and edit every field before saving.</p>
+      </div>
+      <span class="recipe-ai-confidence ${confidenceClass}">${confidence}% confidence</span>
+    </div>
+    ${warnings.length ? `<div class="recipe-ai-warning-block"><strong>AI Warnings</strong><ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>` : '<p class="recipe-ai-no-warnings"><i class="ti ti-circle-check"></i>No specific transcription warnings were returned.</p>'}
+    ${unclearFields.length ? `<p class="recipe-ai-unclear"><strong>Check these fields:</strong> ${unclearFields.map(escapeHtml).join(', ')}</p>` : ''}
+  `;
 }
 
 async function recipeSourceFileToDataUrl(file) {
@@ -2267,6 +2464,7 @@ function recipeItem(recipe) {
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
         ${recipe.favorite ? '<span class="badge good">favorite</span>' : ''}
         ${recipe.importSource === 'printed' ? '<span class="badge">printed import</span>' : ''}
+        ${recipe.aiCleaned ? `<span class="badge accent" title="AI confidence ${Math.round((Number(recipe.aiConfidence) || 0) * 100)}%">AI cleaned</span>` : ''}
         ${recipe.originalScan ? '<span class="badge">scan saved</span>' : ''}
       </div>
       <p class="muted">${formatDurationMinutes(recipe.prepTime || 0)} prep • ${formatDurationMinutes(recipe.cookTime || 0)} cook • ${starRating(recipe.rating || 0)} • cooked ${recipe.timesCooked || 0}x</p>

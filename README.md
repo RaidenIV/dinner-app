@@ -10,6 +10,7 @@ It helps a household decide what to eat by combining a weekly breakfast/lunch/di
 - Shared household accounts with an invite code
 - Weekly planner with breakfast, lunch, and dinner slots
 - Recipe organizer with ingredients, instructions, tags, ratings, favorites, and usage tracking
+- Review-first AI cleanup for pasted OCR recipe text
 - Restaurant organizer with cuisine, price, tags, favorite dishes, ratings, and visit tracking
 - Random restaurant selector with cuisine, tag, and price filters
 - Shared grocery list
@@ -24,6 +25,7 @@ It helps a household decide what to eat by combining a weekly breakfast/lunch/di
 - Frontend: HTML, CSS, JavaScript
 - Backend: Node.js, Express
 - Database: MongoDB with Mongoose
+- AI recipe cleanup: OpenAI Responses API with Structured Outputs
 - Auth: JWT + bcrypt password hashing
 - Hosting: Railway
 - Source control: GitHub
@@ -70,6 +72,10 @@ MONGODB_URI=mongodb://127.0.0.1:27017/meal_planner
 JWT_SECRET=replace-this-with-a-long-random-secret
 PORT=3000
 NODE_ENV=development
+OPENAI_API_KEY=<your OpenAI API key>
+OPENAI_RECIPE_MODEL=gpt-5.6-luna
+AI_RECIPE_CLEANUP_ENABLED=true
+AI_RECIPE_MAX_REQUESTS_PER_HOUR=20
 ```
 
 For production, use a long random value for `JWT_SECRET`.
@@ -86,6 +92,10 @@ For production, use a long random value for `JWT_SECRET`.
 MONGODB_URI=<your MongoDB connection string>
 JWT_SECRET=<long random secret>
 NODE_ENV=production
+OPENAI_API_KEY=<your OpenAI API key>
+OPENAI_RECIPE_MODEL=gpt-5.6-luna
+AI_RECIPE_CLEANUP_ENABLED=true
+AI_RECIPE_MAX_REQUESTS_PER_HOUR=20
 ```
 
 6. Deploy the service.
@@ -95,6 +105,24 @@ Railway should detect the Node app and run:
 ```bash
 npm start
 ```
+
+## AI Recipe Cleanup
+
+The Recipe Import Assistant includes a review-first **Clean Up With AI** action. The current implementation is Phase 1 of the integration:
+
+1. Open **Recipes**.
+2. Click **Import Printed Recipe**.
+3. Paste OCR text or type the printed recipe into the text area.
+4. Click **Clean Up With AI**.
+5. Review the generated recipe fields, confidence score, warnings, and unclear fields.
+6. Edit anything that needs correction.
+7. Save the recipe only after review.
+
+The AI endpoint is authenticated, keeps the API key on the server, limits raw text to 15,000 characters, and applies a configurable per-user hourly request limit. AI results are never saved automatically.
+
+Photo/PDF uploads are still attached as the original scan, but this phase does **not** automatically OCR those files. Paste OCR text into the import text area for AI cleanup. Automatic image/PDF OCR can be added as the next phase.
+
+If `OPENAI_API_KEY` is missing or AI cleanup is disabled, the app continues to support the existing **Fill From Text** and manual import flow.
 
 ## First Use
 
