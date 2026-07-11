@@ -162,21 +162,6 @@ function bindShell() {
     if (shouldRenderRestaurants) renderRestaurants();
   }, true);
 
-  $('#quick-suggest-btn').addEventListener('click', async () => {
-    state.page = 'dashboard';
-    setActiveNav('dashboard');
-    await loadSuggestions({ mealType: 'dinner' });
-    renderDashboard();
-    showToast('Dinner suggestions refreshed.');
-  });
-
-  $('#quick-random-btn').addEventListener('click', async () => {
-    state.page = 'restaurants';
-    setActiveNav('restaurants');
-    await loadRestaurants();
-    renderRestaurants();
-    setTimeout(() => $('#random-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
-  });
 }
 
 async function bootApp() {
@@ -1212,7 +1197,7 @@ function renderRecipes() {
       <form id="recipe-form" class="form-card">
         <div class="form-heading-row">
           <h3>Add Recipe</h3>
-          <button class="secondary small-btn" id="open-recipe-import" type="button"><i class="ti ti-camera"></i>Import Printed Recipe</button>
+          <button class="secondary small-btn" id="open-recipe-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
         </div>
         <div class="form-grid">
           <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
@@ -1313,13 +1298,13 @@ function openRecipeImportModal() {
                 <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
               </div>
               <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
-              <div class="recipe-ocr-controls">
+              <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
                 <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
                 <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
               </div>
             </div>
-            <label class="wide">Extracted or Typed Text <span class="optional">review the extracted text before AI cleanup; nothing saves automatically</span><textarea name="importText" maxlength="15000" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it."></textarea></label>
-            <section class="recipe-ai-callout" aria-labelledby="recipe-ai-title">
+            <label class="wide recipe-import-scan-dependent hidden">Extracted or Typed Text <span class="optional">review the extracted text before AI cleanup; nothing saves automatically</span><textarea name="importText" maxlength="15000" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it."></textarea></label>
+            <section class="recipe-ai-callout recipe-import-scan-dependent hidden" aria-labelledby="recipe-ai-title">
               <div>
                 <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
                 <p>Turn messy OCR text into an editable recipe draft. Review every field before saving.</p>
@@ -1327,11 +1312,11 @@ function openRecipeImportModal() {
               <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles"></i>Clean Up With AI</button>
             </section>
             <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
-            <div class="action-row recipe-import-actions">
+            <div class="action-row recipe-import-actions recipe-import-scan-dependent hidden">
               <button class="secondary" id="recipe-import-parse" type="button"><i class="ti ti-wand"></i>Fill From Text</button>
               <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
             </div>
-            <div class="form-grid compact-form-grid recipe-import-fields">
+            <div class="form-grid compact-form-grid recipe-import-fields recipe-import-scan-dependent hidden">
               <label>Name<input name="name" required placeholder="Grandma's lasagna" /></label>
               <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" /></label>
               <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" /></label>
@@ -1351,7 +1336,7 @@ function openRecipeImportModal() {
               <label class="wide">Import Notes<textarea name="importNotes" placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
-            <div class="modal-actions action-row">
+            <div class="modal-actions action-row recipe-import-scan-dependent hidden">
               <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
               <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
               <button class="primary" type="submit" data-recipe-import-save>Save Imported Recipe</button>
@@ -1394,6 +1379,12 @@ function closeRecipeImportModal() {
   }, 180);
 }
 
+function setRecipeImportScanDependentVisibility(form, visible) {
+  form?.querySelectorAll?.('.recipe-import-scan-dependent').forEach(element => {
+    element.classList.toggle('hidden', !visible);
+  });
+}
+
 async function handleRecipeImportFile(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
@@ -1402,6 +1393,7 @@ async function handleRecipeImportFile(event) {
   updateRecipeOcrControls(form, { state: 'loading', message: 'Preparing and optimizing the scan…' });
   try {
     recipeImportScan = await recipeSourceFileToDataUrl(file);
+    setRecipeImportScanDependentVisibility(form, true);
     if (preview) {
       preview.classList.remove('empty');
       preview.innerHTML = recipeImportScan.type.startsWith('image/')
@@ -1414,6 +1406,7 @@ async function handleRecipeImportFile(event) {
     await extractRecipeTextFromScan(form, { automatic: true });
   } catch (error) {
     recipeImportScan = { dataUrl: '', name: '', type: '' };
+    setRecipeImportScanDependentVisibility(form, false);
     if (preview) {
       preview.classList.add('empty');
       preview.textContent = 'No scan selected.';
@@ -1431,6 +1424,7 @@ function clearRecipeImportScan() {
   const cameraInput = document.querySelector('#recipe-import-camera-file');
   const preview = document.querySelector('#recipe-import-preview');
   const form = document.querySelector('#recipe-import-form');
+  setRecipeImportScanDependentVisibility(form, false);
   if (fileInput) fileInput.value = '';
   if (cameraInput) cameraInput.value = '';
   if (preview) {
