@@ -1188,10 +1188,16 @@ function getVisibleMobileRecipes() {
   });
 }
 
-function mobileRecipeActionMenuPanel(recipe) {
+function mobileRecipeActionMenuPanel(recipe, { includeEdit = false } = {}) {
   const recipeId = String(recipe._id);
   return `
     <div class="mobile-recipe-action-menu" role="menu">
+      ${includeEdit ? `
+        <button type="button" role="menuitem" data-edit-mobile-recipe="${escapeAttr(recipeId)}">
+          <i class="ti ti-pencil" aria-hidden="true"></i>
+          <span>Edit</span>
+        </button>
+      ` : ''}
       <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
         <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
         <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
@@ -1221,7 +1227,7 @@ function mobileRecipeActionMenu(recipe, { detail = false } = {}) {
       <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
         <i class="ti ti-dots-vertical" aria-hidden="true"></i>
       </button>
-      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe) : ''}
+      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe, { includeEdit: detail }) : ''}
     </div>
   `;
 }
@@ -1356,6 +1362,15 @@ function closeMobileRecipeActionMenus() {
 }
 
 function bindMobileRecipeActionItems(root) {
+  root.querySelectorAll('[data-edit-mobile-recipe]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.editMobileRecipe));
+      closeMobileRecipeActionMenus();
+      if (recipe) openRecipeEditModal(recipe);
+    });
+  });
+
   root.querySelectorAll('[data-view-recipe-scan]').forEach(button => {
     button.addEventListener('click', event => {
       event.stopPropagation();
@@ -1441,7 +1456,8 @@ function bindRecipeListActions(root = pageRoot) {
 
       state.openMobileRecipeMenuId = recipeId;
       button.setAttribute('aria-expanded', 'true');
-      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe));
+      const includeEdit = Boolean(button.closest('.mobile-recipe-detail-menu-wrap'));
+      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe, { includeEdit }));
       bindMobileRecipeActionItems(button.parentElement);
     });
   });
@@ -1519,6 +1535,112 @@ function openDeleteRecipeConfirmation(recipe) {
   document.body.classList.add('modal-open');
   requestAnimationFrame(() => overlay.classList.add('open'));
   overlay.querySelector('[data-confirm-recipe-delete]')?.focus();
+}
+
+function openRecipeEditModal(recipe) {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.recipe-edit-overlay')?.remove();
+
+  const prepTime = Math.max(0, Math.round(Number(recipe.prepTime) || 0));
+  const prepHours = String(Math.floor(prepTime / 60)).padStart(2, '0');
+  const prepMinutes = String(prepTime % 60).padStart(2, '0');
+  const ingredientsText = (recipe.ingredients || [])
+    .map(ingredient => [
+      ingredient.quantity || '',
+      ingredient.unit || '',
+      ingredient.name || '',
+      ingredient.category || 'Other'
+    ].join(' | '))
+    .join('\n');
+
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-import-overlay recipe-edit-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-import-modal recipe-edit-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-edit-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-edit-title">Edit Recipe</h3>
+          <p class="muted">Update the recipe details below.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-edit aria-label="Close recipe editor">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="recipe-edit-form" class="calendar-meal-form recipe-import-form">
+            <div class="form-grid compact-form-grid">
+              <label>Name<input name="name" required value="${escapeAttr(recipe.name || '')}" /></label>
+              <label>Cuisine<input name="cuisine" value="${escapeAttr(recipe.cuisine || '')}" placeholder="American, Mexican, Italian" /></label>
+              <label>Meal Types<input name="mealTypes" value="${escapeAttr((recipe.mealTypes || []).join(', '))}" placeholder="dinner, lunch" /></label>
+              <label>Tags<input name="tags" value="${escapeAttr((recipe.tags || []).join(', '))}" placeholder="quick, cheap, healthy" /></label>
+              <label>Prep Time
+                <span class="duration-clock" aria-label="Prep time duration">
+                  <input name="editPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepHours)}" aria-label="Prep time hours" />
+                  <span class="duration-separator" aria-hidden="true">:</span>
+                  <input name="editPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepMinutes)}" aria-label="Prep time minutes" />
+                </span>
+              </label>
+              <label>Cook Time<input name="cookTime" type="number" min="0" value="${escapeAttr(recipe.cookTime || 0)}" /></label>
+              <label>Difficulty
+                <select name="difficulty">
+                  ${option('easy', 'Easy', recipe.difficulty || 'easy')}
+                  ${option('medium', 'Medium', recipe.difficulty || 'easy')}
+                  ${option('hard', 'Hard', recipe.difficulty || 'easy')}
+                </select>
+              </label>
+              <label>Rating<select name="rating">${recipeRatingOptions(recipe.rating || 3)}</select></label>
+              <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" rows="9">${escapeHtml(ingredientsText)}</textarea></label>
+              <label class="wide">Instructions<textarea name="instructions">${escapeHtml(recipe.instructions || '')}</textarea></label>
+              <label class="wide checkbox-line"><input type="checkbox" name="favorite" ${recipe.favorite ? 'checked' : ''} /> Favorite</label>
+            </div>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-recipe-edit>Cancel</button>
+              <button class="primary" type="submit">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+
+  const close = () => {
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+
+  overlay.querySelectorAll('[data-close-recipe-edit]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  overlay.querySelector('#recipe-edit-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = formToBody(formElement);
+      body.prepTime = durationInputsToMinutes(formElement, 'editPrep');
+      delete body.editPrepHours;
+      delete body.editPrepMinutes;
+      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      body.originalScan = recipe.originalScan || '';
+      body.originalScanName = recipe.originalScanName || '';
+      body.importSource = recipe.importSource || '';
+      body.importNotes = recipe.importNotes || '';
+
+      await api(`/api/recipes/${recipe._id}`, { method: 'PUT', body });
+      await loadRecipes();
+      state.openMobileRecipeMenuId = '';
+      renderRecipes();
+      close();
+    }, 'Recipe updated.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('input[name="name"]')?.focus();
 }
 
 function openRecipeTagsModal(recipe) {
