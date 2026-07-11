@@ -2087,11 +2087,11 @@ function openRecipeImportModal() {
           <h3 id="recipe-import-title">Import Recipe</h3>
           <p class="muted">Paste a recipe URL, upload a file, or take a photo to create an editable draft.</p>
         </div>
-        <button class="secondary modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
+        <button class="small-btn modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
       </header>
       <div class="time-modal-body">
         <div class="time-modal-body-inner">
-          <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
+          <form id="recipe-import-form" class="calendar-meal-form recipe-import-form" autocomplete="off">
             <div class="recipe-import-upload" id="recipe-import-options">
               <div class="recipe-import-url-card">
                 <div class="recipe-import-url-card-header">
@@ -2106,7 +2106,7 @@ function openRecipeImportModal() {
                 <div class="recipe-import-options-body">
                   <div class="recipe-import-source-picker">
                     <div class="recipe-import-url-row">
-                      <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="url" />
+                      <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="off" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" data-lpignore="true" data-1p-ignore="true" />
                       <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
                     </div>
                     <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
@@ -2129,10 +2129,9 @@ function openRecipeImportModal() {
             </div>
             <div class="recipe-import-text-control recipe-import-scan-dependent hidden">
               <button class="secondary" id="recipe-import-view-text" type="button"><i class="ti ti-file-text"></i>View Extracted Text</button>
-              <textarea hidden name="importText" maxlength="15000" aria-label="Extracted or typed recipe text"></textarea>
+              <textarea hidden name="importText" maxlength="15000" aria-label="Extracted or typed recipe text" autocomplete="off"></textarea>
             </div>
             <div class="recipe-import-ai-action recipe-import-scan-dependent hidden">
-              <span class="recipe-import-ai-label"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</span>
               <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles" aria-hidden="true"></i><span class="recipe-ai-button-label">Clean with AI</span></button>
             </div>
             <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
@@ -2140,10 +2139,10 @@ function openRecipeImportModal() {
               <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
             </div>
             <div class="form-grid compact-form-grid recipe-import-fields recipe-import-scan-dependent hidden">
-              <label>Name<input name="name" required placeholder="Grandma's lasagna" /></label>
-              <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" /></label>
-              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" /></label>
-              <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" /></label>
+              <label>Name<input name="recipeName" required placeholder="Grandma's lasagna" autocomplete="off" autocapitalize="words" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
+              <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" autocomplete="off" autocapitalize="words" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
+              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" /></label>
+              <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" autocomplete="off" autocapitalize="none" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
               <div class="recipe-import-time-row wide">
                 <label>Prep Time
                   <span class="duration-clock" aria-label="Prep time duration">
@@ -2156,9 +2155,9 @@ function openRecipeImportModal() {
               </div>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-              <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="1" data-recipe-import-autogrow placeholder="One ingredient per line"></textarea></label>
-              <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="1" data-recipe-import-autogrow placeholder="Recipe steps"></textarea></label>
-              <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="1" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
+              <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="1" data-recipe-import-autogrow placeholder="One ingredient per line" autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="1" data-recipe-import-autogrow placeholder="Recipe steps" autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="1" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc." autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
             <div class="modal-actions action-row recipe-import-save-actions recipe-import-save-cancel-row recipe-import-inline-buttons recipe-import-scan-dependent hidden">
@@ -2289,7 +2288,7 @@ function openRecipeImportTextModal(form) {
       </header>
       <div class="time-modal-body">
         <div class="time-modal-body-inner recipe-import-text-body">
-          <textarea id="recipe-import-text-editor" maxlength="15000" aria-label="Extracted recipe text" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it.">${escapeHtml(sourceTextarea?.value || '')}</textarea>
+          <textarea id="recipe-import-text-editor" maxlength="15000" aria-label="Extracted recipe text" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it." autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true">${escapeHtml(sourceTextarea?.value || '')}</textarea>
           <div class="modal-actions">
             <button class="primary" type="button" data-close-recipe-import-text>Done</button>
           </div>
@@ -2532,10 +2531,10 @@ function fillRecipeImportFromText(form, { automatic = false } = {}) {
   resetRecipeAiReview(form);
   const text = form.elements.importText?.value || '';
   const parsed = parseImportedRecipeText(text, recipeImportScan.name);
-  const currentName = String(form.elements.name?.value || '').trim();
+  const currentName = String(form.elements.recipeName?.value || '').trim();
 
   if (parsed.name && (!currentName || aiRecipeNameMatchesScanFilename(currentName, recipeImportScan.name))) {
-    form.elements.name.value = parsed.name;
+    form.elements.recipeName.value = parsed.name;
   }
   if (parsed.ingredientsText && form.elements.ingredientsText) {
     form.elements.ingredientsText.value = parsed.ingredientsText;
@@ -2575,6 +2574,8 @@ async function saveImportedRecipe(event) {
 
   try {
     const body = formToBody(formElement);
+    body.name = String(body.recipeName || '').trim();
+    delete body.recipeName;
     delete body.recipeFile;
     delete body.recipeUrl;
     delete body.importText;
@@ -2725,8 +2726,8 @@ function aiRecipeNameMatchesScanFilename(name, filename) {
 function applyAiRecipeDraftToForm(form, draft) {
   if (!form) return;
   const aiRecipeName = String(draft.name || '').trim();
-  if (form.elements.name && aiRecipeName && !aiRecipeNameMatchesScanFilename(aiRecipeName, recipeImportScan.name)) {
-    form.elements.name.value = aiRecipeName;
+  if (form.elements.recipeName && aiRecipeName && !aiRecipeNameMatchesScanFilename(aiRecipeName, recipeImportScan.name)) {
+    form.elements.recipeName.value = aiRecipeName;
   }
   if (form.elements.cuisine) form.elements.cuisine.value = draft.cuisine || '';
   if (form.elements.mealTypes) form.elements.mealTypes.value = (draft.mealTypes || []).join(', ') || 'dinner';
@@ -2780,15 +2781,22 @@ function renderRecipeAiReview(review, meta) {
 
   review.classList.remove('hidden');
   review.innerHTML = `
-    <div class="recipe-ai-review-head">
-      <div>
-        <strong><i class="ti ti-sparkles"></i>AI Draft Ready</strong>
-        <p>Review and edit every field before saving.</p>
+    <details class="recipe-ai-review-details">
+      <summary class="recipe-ai-review-summary">
+        <span class="recipe-ai-review-title-row">
+          <strong><i class="ti ti-sparkles"></i>AI Draft Ready</strong>
+          <span class="recipe-ai-confidence ${confidenceClass}">${confidence}% confidence</span>
+        </span>
+        <i class="ti ti-chevron-down recipe-ai-review-chevron" aria-hidden="true"></i>
+      </summary>
+      <div class="recipe-ai-review-body">
+        <div class="recipe-ai-review-body-inner">
+          <p class="recipe-ai-review-description">Review and edit every field before saving.</p>
+          ${warnings.length ? `<div class="recipe-ai-warning-block"><strong>AI Warnings</strong><ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>` : '<p class="recipe-ai-no-warnings"><i class="ti ti-circle-check"></i>No specific transcription warnings were returned.</p>'}
+          ${unclearFields.length ? `<p class="recipe-ai-unclear"><strong>Check these fields:</strong> ${unclearFields.map(escapeHtml).join(', ')}</p>` : ''}
+        </div>
       </div>
-      <span class="recipe-ai-confidence ${confidenceClass}">${confidence}% confidence</span>
-    </div>
-    ${warnings.length ? `<div class="recipe-ai-warning-block"><strong>AI Warnings</strong><ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>` : '<p class="recipe-ai-no-warnings"><i class="ti ti-circle-check"></i>No specific transcription warnings were returned.</p>'}
-    ${unclearFields.length ? `<p class="recipe-ai-unclear"><strong>Check these fields:</strong> ${unclearFields.map(escapeHtml).join(', ')}</p>` : ''}
+    </details>
   `;
 }
 

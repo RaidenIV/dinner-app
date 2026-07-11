@@ -3171,6 +3171,10 @@ body.mobile-drawer-open .panel-edge-toggle {
 .recipe-import-form {
   display: grid;
   gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .recipe-import-upload {
@@ -3482,6 +3486,102 @@ body.mobile-drawer-open .panel-edge-toggle {
   font-weight: 700;
 }
 
+
+/* AI draft review: minimized by default with confidence beside the title */
+.recipe-ai-review {
+  padding: 0;
+  overflow: hidden;
+}
+
+.recipe-ai-review-details {
+  display: block;
+}
+
+.recipe-ai-review-summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.recipe-ai-review-summary::-webkit-details-marker {
+  display: none;
+}
+
+.recipe-ai-review-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recipe-ai-review-title-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.recipe-ai-review-title-row .recipe-ai-confidence {
+  align-self: center;
+}
+
+.recipe-ai-review-chevron {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 18px;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.recipe-ai-review-details[open] .recipe-ai-review-chevron {
+  transform: rotate(180deg);
+}
+
+.recipe-ai-review-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+
+.recipe-ai-review-details:not([open]) > .recipe-ai-review-body {
+  display: grid;
+}
+
+.recipe-ai-review-details[open] .recipe-ai-review-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.recipe-ai-review-body-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 13px 13px;
+}
+
+.recipe-ai-review-description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.recipe-ai-review > .recipe-ai-loading,
+.recipe-ai-review > .recipe-ai-error {
+  padding: 14px 16px;
+}
+
 .recipe-ai-loading,
 .recipe-ai-error {
   display: flex;
@@ -3576,7 +3676,7 @@ body.mobile-drawer-open .panel-edge-toggle {
     justify-content: center;
   }
 
-  .recipe-ai-confidence {
+  .recipe-ai-review-head > .recipe-ai-confidence {
     align-self: flex-start;
   }
 
@@ -6742,25 +6842,6 @@ body > .slot-tag-modal .slot-tag-modal-card {
   padding: 24px 16px;
 }
 
-.recipe-import-modal .modal-close-btn {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 999px;
-  line-height: 1;
-  color: var(--text-secondary);
-  background: var(--white);
-}
-
-.recipe-import-modal .modal-close-btn:hover,
-.recipe-import-modal .modal-close-btn:focus-visible {
-  color: var(--text-primary);
-  border-color: var(--border-mid);
-  background: var(--surface);
-}
-
 .recipe-import-url-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -6803,13 +6884,6 @@ body > .slot-tag-modal .slot-tag-modal-card {
     align-items: flex-start;
   }
 
-  .recipe-import-modal .modal-close-btn {
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    font-size: 20px;
-  }
-
   .recipe-import-url-row {
     grid-template-columns: 1fr;
   }
@@ -6832,7 +6906,7 @@ body > .slot-tag-modal .slot-tag-modal-card {
   overflow: hidden;
   border: 1px solid var(--border-mid);
   border-radius: 14px;
-  background: var(--surface);
+  background: var(--white);
 }
 
 .recipe-import-url-card-header {
@@ -6931,7 +7005,7 @@ body > .slot-tag-modal .slot-tag-modal-card {
 .recipe-import-ai-action {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   padding: 0;
   border: 0;
@@ -7177,5 +7251,10 @@ body > .slot-tag-modal .slot-tag-modal-card {
 
   .recipe-import-scan-dependent:not(.hidden) {
     animation: none;
+  }
+
+  .recipe-ai-review-chevron,
+  .recipe-ai-review-body {
+    transition: none;
   }
 }
