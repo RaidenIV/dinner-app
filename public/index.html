@@ -68,6 +68,7 @@
         <div class="topnav-brand">
           <span class="topnav-logo-row"><span class="topnav-logo">HomePlate</span><span class="homeplate-logo-icon" aria-hidden="true"></span></span>
           <span class="topnav-sub">Decide Dinner Without The Debate</span>
+          <span class="topnav-mobile-page-title" aria-hidden="true">Recipes</span>
         </div>
 
         <nav id="controlPanel" class="topnav-nav nav-list control-panel" aria-label="Main navigation">
@@ -124,6 +125,18 @@
               <p class="eyebrow" id="today-label"></p>
               <div class="toolbar-title-row">
                 <h2 id="page-title" class="toolbar-title">Dashboard</h2>
+                <div id="recipe-mobile-cookbook-toolbar" class="recipe-mobile-cookbook-toolbar" hidden>
+                  <label class="recipe-mobile-cookbook-select-wrap">
+                    <span class="visually-hidden">Select cookbook</span>
+                    <select id="recipe-cookbook-select" aria-label="Select cookbook">
+                      <option value="all">Cookbooks</option>
+                    </select>
+                    <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                  </label>
+                  <button id="manage-recipe-cookbooks" class="recipe-mobile-cookbook-manage" type="button" aria-label="Manage cookbooks">
+                    <i class="ti ti-edit" aria-hidden="true"></i>
+                  </button>
+                </div>
                 <section id="toast" class="toast hidden" aria-live="polite"></section>
               </div>
             </div>

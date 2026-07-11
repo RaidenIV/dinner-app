@@ -131,6 +131,14 @@ const recipeSchema = new mongoose.Schema({
   createdBy: { type: objectId, ref: 'User' }
 }, { timestamps: true });
 
+const cookbookSchema = new mongoose.Schema({
+  householdId: { type: objectId, ref: 'Household', required: true, index: true },
+  name: { type: String, required: true, trim: true, maxlength: 80 },
+  recipeIds: [{ type: objectId, ref: 'Recipe' }],
+  createdBy: { type: objectId, ref: 'User' }
+}, { timestamps: true });
+cookbookSchema.index({ householdId: 1, name: 1 });
+
 const restaurantSchema = new mongoose.Schema({
   householdId: { type: objectId, ref: 'Household', required: true, index: true },
   name: { type: String, required: true, trim: true, maxlength: 120 },
@@ -206,6 +214,7 @@ const Household = mongoose.model('Household', householdSchema);
 const HouseholdInvite = mongoose.model('HouseholdInvite', householdInviteSchema);
 const User = mongoose.model('User', userSchema);
 const Recipe = mongoose.model('Recipe', recipeSchema);
+const Cookbook = mongoose.model('Cookbook', cookbookSchema);
 const Restaurant = mongoose.model('Restaurant', restaurantSchema);
 const MealPlan = mongoose.model('MealPlan', mealPlanSchema);
 const GroceryItem = mongoose.model('GroceryItem', groceryItemSchema);
@@ -318,6 +327,39 @@ function normalizeAiRecipeDraft(value) {
   };
 }
 
+function extractAiIngredientFallback(rawText) {
+  const lines = String(rawText || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => cleanAiText(line, 300))
+    .filter(Boolean);
+
+  const sectionStart = lines.findIndex(line => /^(ingredients?|what you(?:'|’)?ll need)\s*:?/i.test(line));
+  if (sectionStart < 0) return [];
+
+  const ingredients = [];
+  const startMatch = lines[sectionStart].match(/^(?:ingredients?|what you(?:'|’)?ll need)\s*:\s*(.+)$/i);
+  if (startMatch?.[1]) ingredients.push(startMatch[1].trim());
+
+  for (let index = sectionStart + 1; index < lines.length && ingredients.length < 100; index += 1) {
+    const line = lines[index];
+    if (/^(instructions?|directions?|method|preparation|steps?|procedure|how to make)\s*:?/i.test(line)) break;
+    if (/^(serves?|servings?|yield|prep(?:aration)? time|cook(?:ing)? time|total time|temperature)\s*:/i.test(line)) continue;
+
+    const cleaned = line.replace(/^[-*•▪◦‣]\s*/, '').trim();
+    if (!cleaned || /^(for the|optional|garnish|topping|sauce|filling|dough)\s*:?$/i.test(cleaned)) continue;
+    ingredients.push(cleaned);
+  }
+
+  return ingredients.map(line => ({
+    raw: line,
+    quantity: '',
+    unit: '',
+    item: line,
+    notes: ''
+  }));
+}
+
 function consumeAiRecipeQuota(userId) {
   const now = Date.now();
   const windowMs = 60 * 60 * 1000;
@@ -417,7 +459,8 @@ Extract and clean only information supported by the source. Do not invent ingred
 Correct obvious OCR errors only when context makes the correction highly likely. Preserve family notes, unusual wording, fractions, and measurements.
 Use empty strings, empty arrays, or 0 when information is missing. Add a concise warning for every uncertain interpretation or missing important field.
 Return the recipe using the required structured schema.
-For ingredients, preserve the original cleaned line in raw and also separate quantity, unit, item, and notes when possible.
+Never use an uploaded file name, camera-generated name, or scan metadata as the recipe name. Derive the recipe name only from the recipe text. If the source has no clear title, leave name empty and add a warning.
+For ingredients, include every ingredient line supported by the source, even when a quantity or unit is unclear. Preserve the original cleaned line in raw and also separate quantity, unit, item, and notes when possible. Do not leave ingredients empty when the source contains an ingredient section.
 For instructions, keep the original order and use one concise step per item.
 Difficulty must be Easy, Medium, or Hard. Meal types must use only breakfast, lunch, dinner, snack, or dessert.
 Confidence is a number from 0 to 1 reflecting transcription certainty, not recipe quality.
@@ -1124,7 +1167,6 @@ app.post('/api/recipes/import/ai-cleanup', authenticate, async (req, res) => {
     return res.status(429).json({ error: 'AI recipe cleanup limit reached. Try again later.' });
   }
 
-  const filename = cleanAiText(req.body.filename, 160);
   const userNotes = cleanAiText(req.body.notes, 500);
   const preferredMealType = ['breakfast', 'lunch', 'dinner', 'snack', 'dessert'].includes(req.body.preferredMealType)
     ? req.body.preferredMealType
@@ -1138,7 +1180,6 @@ app.post('/api/recipes/import/ai-cleanup', authenticate, async (req, res) => {
         {
           role: 'user',
           content: [
-            filename ? `Original filename: ${filename}` : '',
             preferredMealType ? `Preferred meal type if supported by the source: ${preferredMealType}` : '',
             userNotes ? `User context notes: ${userNotes}` : '',
             'Recipe source text follows:',
@@ -1156,6 +1197,15 @@ app.post('/api/recipes/import/ai-cleanup', authenticate, async (req, res) => {
     }
 
     const draft = normalizeAiRecipeDraft(response.output_parsed);
+    if (!draft.ingredients.length) {
+      const recoveredIngredients = extractAiIngredientFallback(rawText);
+      if (recoveredIngredients.length) {
+        draft.ingredients = recoveredIngredients;
+        if (!draft.sourceQuality.warnings.includes('Ingredient lines were recovered directly from the source text; review them before saving.')) {
+          draft.sourceQuality.warnings.push('Ingredient lines were recovered directly from the source text; review them before saving.');
+        }
+      }
+    }
     return res.json({
       draft,
       model: OPENAI_RECIPE_MODEL,
@@ -1258,7 +1308,79 @@ app.put('/api/recipes/:id', authenticate, async (req, res) => {
 app.delete('/api/recipes/:id', authenticate, async (req, res) => {
   await Recipe.deleteOne({ _id: req.params.id, householdId: req.householdId });
   await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'recipe', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted recipe' });
+  await Cookbook.updateMany({ householdId: req.householdId }, { $pull: { recipeIds: req.params.id } });
   broadcastHouseholdUpdate(req, 'recipes:deleted', { recipeId: req.params.id });
+  res.json({ ok: true });
+});
+
+app.get('/api/cookbooks', authenticate, async (req, res) => {
+  const cookbooks = await Cookbook.find({ householdId: req.householdId }).sort({ name: 1, createdAt: 1 }).lean();
+  res.json(cookbooks);
+});
+
+app.post('/api/cookbooks', authenticate, async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim().slice(0, 80);
+    if (!name) return res.status(400).json({ error: 'Cookbook name is required.' });
+
+    const duplicate = await Cookbook.findOne({
+      householdId: req.householdId,
+      name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' }
+    }).lean();
+    if (duplicate) return res.status(409).json({ error: 'A cookbook with that name already exists.' });
+
+    const cookbook = await Cookbook.create({
+      householdId: req.householdId,
+      name,
+      recipeIds: [],
+      createdBy: req.user._id
+    });
+    broadcastHouseholdUpdate(req, 'cookbooks:created', { cookbookId: cookbook._id.toString() });
+    res.status(201).json(cookbook);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not create cookbook.' });
+  }
+});
+
+app.put('/api/cookbooks/:id', authenticate, async (req, res) => {
+  try {
+    const cookbook = await Cookbook.findOne({ _id: req.params.id, householdId: req.householdId });
+    if (!cookbook) return res.status(404).json({ error: 'Cookbook not found.' });
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
+      const name = String(req.body.name || '').trim().slice(0, 80);
+      if (!name) return res.status(400).json({ error: 'Cookbook name is required.' });
+      const duplicate = await Cookbook.findOne({
+        _id: { $ne: cookbook._id },
+        householdId: req.householdId,
+        name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' }
+      }).lean();
+      if (duplicate) return res.status(409).json({ error: 'A cookbook with that name already exists.' });
+      cookbook.name = name;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'recipeIds')) {
+      const requestedIds = Array.isArray(req.body.recipeIds)
+        ? [...new Set(req.body.recipeIds.map(value => String(value)).filter(value => mongoose.Types.ObjectId.isValid(value)))]
+        : [];
+      const householdRecipes = requestedIds.length
+        ? await Recipe.find({ _id: { $in: requestedIds }, householdId: req.householdId }).select('_id').lean()
+        : [];
+      cookbook.recipeIds = householdRecipes.map(recipe => recipe._id);
+    }
+
+    await cookbook.save();
+    broadcastHouseholdUpdate(req, 'cookbooks:updated', { cookbookId: cookbook._id.toString() });
+    res.json(cookbook);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not update cookbook.' });
+  }
+});
+
+app.delete('/api/cookbooks/:id', authenticate, async (req, res) => {
+  const result = await Cookbook.deleteOne({ _id: req.params.id, householdId: req.householdId });
+  if (!result.deletedCount) return res.status(404).json({ error: 'Cookbook not found.' });
+  broadcastHouseholdUpdate(req, 'cookbooks:deleted', { cookbookId: req.params.id });
   res.json({ ok: true });
 });
 
