@@ -2092,30 +2092,44 @@ function openRecipeImportModal() {
       <div class="time-modal-body">
         <div class="time-modal-body-inner">
           <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
-            <div class="recipe-import-upload">
-              <div class="recipe-import-source-picker">
-                <span class="recipe-import-source-label">Recipe URL</span>
-                <div class="recipe-import-url-row">
-                  <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="url" />
-                  <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
+            <div class="recipe-import-upload" id="recipe-import-options">
+              <div class="recipe-import-options-header">
+                <div>
+                  <strong>Import Options</strong>
+                  <span id="recipe-import-options-summary">URL, photo, or PDF</span>
                 </div>
-                <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
-                <span class="recipe-import-source-label">Recipe Photo or PDF</span>
-                <div class="recipe-import-source-actions">
-                  <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
-                  <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
-                </div>
-                <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
-                <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
-                <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
+                <button class="secondary small-btn recipe-import-options-toggle" id="recipe-import-options-toggle" type="button" aria-expanded="true">
+                  <i class="ti ti-chevron-up" aria-hidden="true"></i><span>Minimize</span>
+                </button>
               </div>
-              <div id="recipe-import-preview" class="recipe-import-preview empty hidden" aria-live="polite"></div>
-              <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
-                <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
-                <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+              <div class="recipe-import-options-body">
+                <div class="recipe-import-source-picker">
+                  <span class="recipe-import-source-label">Recipe URL</span>
+                  <div class="recipe-import-url-row">
+                    <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="url" />
+                    <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
+                  </div>
+                  <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
+                  <span class="recipe-import-source-label">Recipe Photo or PDF</span>
+                  <div class="recipe-import-source-actions">
+                    <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
+                    <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
+                  </div>
+                  <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
+                  <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+                  <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
+                </div>
+                <div id="recipe-import-preview" class="recipe-import-preview empty hidden" aria-live="polite"></div>
+                <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
+                  <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
+                  <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+                </div>
               </div>
             </div>
-            <label class="wide recipe-import-scan-dependent hidden">Extracted or Typed Text <span class="optional">review the extracted text before AI cleanup; nothing saves automatically</span><textarea name="importText" maxlength="15000" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it."></textarea></label>
+            <div class="recipe-import-text-control recipe-import-scan-dependent hidden">
+              <button class="secondary" id="recipe-import-view-text" type="button"><i class="ti ti-file-text"></i>View Extracted Text</button>
+              <textarea class="visually-hidden" name="importText" maxlength="15000" aria-label="Extracted or typed recipe text"></textarea>
+            </div>
             <section class="recipe-ai-callout recipe-import-scan-dependent hidden" aria-labelledby="recipe-ai-title">
               <div>
                 <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
@@ -2132,14 +2146,16 @@ function openRecipeImportModal() {
               <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" /></label>
               <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" /></label>
               <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" /></label>
-              <label>Prep Time
-                <span class="duration-clock" aria-label="Prep time duration">
-                  <input name="importPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
-                  <span class="duration-separator" aria-hidden="true">:</span>
-                  <input name="importPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
-                </span>
-              </label>
-              <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+              <div class="recipe-import-time-row wide">
+                <label>Prep Time
+                  <span class="duration-clock" aria-label="Prep time duration">
+                    <input name="importPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+                    <span class="duration-separator" aria-hidden="true">:</span>
+                    <input name="importPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+                  </span>
+                </label>
+                <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+              </div>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
               <label class="wide recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="9" placeholder="One ingredient per line"></textarea></label>
@@ -2147,9 +2163,11 @@ function openRecipeImportModal() {
               <label class="wide">Import Notes<textarea name="importNotes" placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
-            <div class="modal-actions action-row recipe-import-scan-dependent hidden">
-              <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
-              <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
+            <div class="modal-actions action-row recipe-import-save-actions recipe-import-scan-dependent hidden">
+              <div class="recipe-import-save-cancel-row">
+                <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
+                <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
+              </div>
               <button class="primary" type="submit" data-recipe-import-save>Save Imported Recipe</button>
             </div>
           </form>
@@ -2170,6 +2188,12 @@ function openRecipeImportModal() {
   overlay.querySelector('#recipe-import-camera-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
+  overlay.querySelector('#recipe-import-options-toggle')?.addEventListener('click', () => {
+    const form = overlay.querySelector('#recipe-import-form');
+    const options = form?.querySelector('#recipe-import-options');
+    setRecipeImportOptionsCollapsed(form, !options?.classList.contains('is-collapsed'));
+  });
+  overlay.querySelector('#recipe-import-view-text')?.addEventListener('click', () => openRecipeImportTextModal(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-url-button')?.addEventListener('click', () => importRecipeFromUrl(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-url')?.addEventListener('keydown', event => {
     if (event.key === 'Enter') {
@@ -2187,6 +2211,7 @@ function closeRecipeImportModal() {
   recipeImportAiMeta = null;
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
+  closeRecipeImportTextModal();
   const overlay = document.querySelector('.recipe-import-overlay');
   if (!overlay) return;
   overlay.classList.remove('open');
@@ -2203,6 +2228,67 @@ function setRecipeImportScanDependentVisibility(form, visible) {
   });
 }
 
+function setRecipeImportOptionsCollapsed(form, collapsed, summary = '') {
+  const options = form?.querySelector?.('#recipe-import-options');
+  const toggle = form?.querySelector?.('#recipe-import-options-toggle');
+  const summaryElement = form?.querySelector?.('#recipe-import-options-summary');
+  if (!options) return;
+
+  options.classList.toggle('is-collapsed', Boolean(collapsed));
+  if (summaryElement) {
+    summaryElement.textContent = summary || (collapsed ? 'Recipe source loaded' : 'URL, photo, or PDF');
+  }
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.innerHTML = collapsed
+      ? '<i class="ti ti-chevron-down" aria-hidden="true"></i><span>Expand</span>'
+      : '<i class="ti ti-chevron-up" aria-hidden="true"></i><span>Minimize</span>';
+  }
+}
+
+function closeRecipeImportTextModal() {
+  document.querySelector('.recipe-import-text-overlay')?.remove();
+}
+
+function openRecipeImportTextModal(form) {
+  if (!form) return;
+  closeRecipeImportTextModal();
+
+  const sourceTextarea = form.elements.importText;
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-import-text-overlay open';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-import-text-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-import-text-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-import-text-title">Extracted Text</h3>
+          <p class="muted">Review or edit the recipe text before filling the fields or cleaning it with AI.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-import-text aria-label="Close extracted text modal">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner recipe-import-text-body">
+          <textarea id="recipe-import-text-editor" maxlength="15000" aria-label="Extracted recipe text" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it.">${escapeHtml(sourceTextarea?.value || '')}</textarea>
+          <div class="modal-actions">
+            <button class="primary" type="button" data-close-recipe-import-text>Done</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  document.body.appendChild(overlay);
+  const editor = overlay.querySelector('#recipe-import-text-editor');
+  editor?.addEventListener('input', () => {
+    if (sourceTextarea) sourceTextarea.value = editor.value;
+  });
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closeRecipeImportTextModal();
+  });
+  overlay.querySelectorAll('[data-close-recipe-import-text]').forEach(button => button.addEventListener('click', closeRecipeImportTextModal));
+  requestAnimationFrame(() => editor?.focus());
+}
+
 async function handleRecipeImportFile(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
@@ -2214,6 +2300,7 @@ async function handleRecipeImportFile(event) {
     recipeImportSourceType = 'printed';
     recipeImportSourceUrl = '';
     setRecipeImportScanDependentVisibility(form, true);
+    setRecipeImportOptionsCollapsed(form, true, recipeImportScan.name || 'Photo or PDF loaded');
     if (preview) {
       preview.classList.remove('empty', 'hidden');
       preview.innerHTML = recipeImportScan.type.startsWith('image/')
@@ -2227,6 +2314,7 @@ async function handleRecipeImportFile(event) {
   } catch (error) {
     recipeImportScan = { dataUrl: '', name: '', type: '' };
     setRecipeImportScanDependentVisibility(form, false);
+    setRecipeImportOptionsCollapsed(form, false);
     if (preview) {
       preview.classList.add('empty', 'hidden');
       preview.textContent = '';
@@ -2247,6 +2335,8 @@ function clearRecipeImportScan() {
   const preview = document.querySelector('#recipe-import-preview');
   const form = document.querySelector('#recipe-import-form');
   setRecipeImportScanDependentVisibility(form, false);
+  setRecipeImportOptionsCollapsed(form, false);
+  closeRecipeImportTextModal();
   if (fileInput) fileInput.value = '';
   if (cameraInput) cameraInput.value = '';
   if (preview) {
@@ -2320,10 +2410,12 @@ async function importRecipeFromUrl(form) {
       form.elements.importNotes.value = `Source URL: ${recipeImportSourceUrl}`;
     }
     setRecipeImportScanDependentVisibility(form, true);
+    setRecipeImportOptionsCollapsed(form, true, 'Recipe URL loaded');
     updateRecipeOcrControls(form, { state: 'ready', message: 'URL imported. Review the text or clean it up with AI.' });
     setRecipeImportUrlStatus(form, 'Recipe page imported. Review the draft below.', 'success');
     await cleanRecipeImportWithAi(form);
   } catch (error) {
+    setRecipeImportOptionsCollapsed(form, false);
     setRecipeImportUrlStatus(form, error.message || 'Unable to import that recipe URL.', 'error');
     showToast(error.message || 'Unable to import that recipe URL.');
   } finally {
@@ -2494,7 +2586,7 @@ function resetRecipeImportForm(form) {
   clearRecipeImportScan();
   resetRecipeAiReview(form);
   setRecipeImportUrlStatus(form, 'Paste a recipe link to import it, or use a photo/PDF below.');
-  form.elements.importText?.focus();
+  form.querySelector('#recipe-import-url')?.focus();
 }
 
 function resetRecipeAiReview(form) {
@@ -2508,8 +2600,8 @@ async function cleanRecipeImportWithAi(form) {
   if (!form) return;
   const rawText = String(form.elements.importText?.value || '').trim();
   if (rawText.length < 20) {
-    showToast('Paste at least a few lines of recipe text before using AI cleanup.');
-    form.elements.importText?.focus();
+    showToast('Add at least a few lines of recipe text before using AI cleanup.');
+    openRecipeImportTextModal(form);
     return;
   }
 
