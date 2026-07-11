@@ -52,6 +52,10 @@ let recipeImportOcrRequestId = 0;
 let recipeImportSourceType = 'printed';
 let recipeImportSourceUrl = '';
 
+function recipeAiMatrixIconMarkup() {
+  return `<span class="recipe-ai-matrix-icon" aria-hidden="true">${'<span></span>'.repeat(16)}</span>`;
+}
+
 const $ = selector => document.querySelector(selector);
 const pageRoot = $('#page-root');
 const toast = $('#toast');
@@ -2115,9 +2119,8 @@ function openRecipeImportModal() {
             <section class="recipe-ai-callout recipe-import-scan-dependent hidden" aria-labelledby="recipe-ai-title">
               <div>
                 <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
-                <p>Turn messy OCR text into an editable recipe draft. Review every field before saving.</p>
               </div>
-              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles"></i>Clean Up With AI</button>
+              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button">${recipeAiMatrixIconMarkup()}<span class="recipe-ai-button-label">Clean with AI</span></button>
             </section>
             <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
             <div class="action-row recipe-import-actions recipe-import-scan-dependent hidden">
@@ -2385,7 +2388,7 @@ async function extractRecipeTextFromScan(form, { automatic = false } = {}) {
     resetRecipeAiReview(form);
     updateRecipeOcrControls(form, {
       state: 'success',
-      message: 'Text extracted. Review it below, then select Clean Up With AI.'
+      message: 'Text extracted. Review it below, then select Clean with AI.'
     });
     showToast('Recipe text extracted. Review it before AI cleanup.');
   } catch (error) {
@@ -2518,7 +2521,8 @@ async function cleanRecipeImportWithAi(form) {
   if (button) {
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    button.innerHTML = '<i class="ti ti-loader-2 recipe-ai-spinner"></i>Cleaning Recipe...';
+    button.classList.add('is-thinking');
+    button.innerHTML = `${recipeAiMatrixIconMarkup()}<span class="recipe-ai-button-label">Thinking</span>`;
   }
   if (review) {
     review.classList.remove('hidden');
@@ -2562,6 +2566,7 @@ async function cleanRecipeImportWithAi(form) {
     if (button?.isConnected) {
       button.disabled = false;
       button.removeAttribute('aria-busy');
+      button.classList.remove('is-thinking');
       button.innerHTML = originalHtml;
     }
   }
