@@ -1638,7 +1638,6 @@ async function cleanRecipeImportWithAi(form) {
       method: 'POST',
       body: {
         rawText,
-        filename: recipeImportScan.name,
         notes: form.elements.importNotes?.value || '',
         preferredMealType
       }
@@ -1671,9 +1670,27 @@ async function cleanRecipeImportWithAi(form) {
   }
 }
 
+function normalizedRecipeNameForComparison(value) {
+  return String(value || '')
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function aiRecipeNameMatchesScanFilename(name, filename) {
+  const normalizedName = normalizedRecipeNameForComparison(name);
+  const normalizedFilename = normalizedRecipeNameForComparison(filename);
+  return Boolean(normalizedName && normalizedFilename && normalizedName === normalizedFilename);
+}
+
 function applyAiRecipeDraftToForm(form, draft) {
   if (!form) return;
-  if (form.elements.name) form.elements.name.value = draft.name || form.elements.name.value || '';
+  const aiRecipeName = String(draft.name || '').trim();
+  if (form.elements.name && aiRecipeName && !aiRecipeNameMatchesScanFilename(aiRecipeName, recipeImportScan.name)) {
+    form.elements.name.value = aiRecipeName;
+  }
   if (form.elements.cuisine) form.elements.cuisine.value = draft.cuisine || '';
   if (form.elements.mealTypes) form.elements.mealTypes.value = (draft.mealTypes || []).join(', ') || 'dinner';
   if (form.elements.tags) form.elements.tags.value = (draft.tags || []).join(', ');
@@ -1682,7 +1699,11 @@ function applyAiRecipeDraftToForm(form, draft) {
   if (form.elements.difficulty) form.elements.difficulty.value = String(draft.difficulty || 'Easy').toLowerCase();
 
   if (form.elements.ingredientsText) {
-    form.elements.ingredientsText.value = (draft.ingredients || []).map(formatAiIngredientLine).filter(Boolean).join('\n');
+    const aiIngredientText = (draft.ingredients || []).map(formatAiIngredientLine).filter(Boolean).join('\n');
+    const sourceFallback = aiIngredientText
+      ? ''
+      : parseImportedRecipeText(form.elements.importText?.value || '', '').ingredientsText;
+    form.elements.ingredientsText.value = aiIngredientText || sourceFallback || '';
   }
   if (form.elements.instructions) {
     form.elements.instructions.value = (draft.instructions || [])
