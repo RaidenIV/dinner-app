@@ -177,10 +177,7 @@ function bindShell() {
 
   document.addEventListener('click', event => {
     if (!state.openMobileRecipeMenuId || event.target.closest('.mobile-recipe-menu-wrap')) return;
-    state.openMobileRecipeMenuId = '';
-    if (state.page !== 'recipes') return;
-    if (state.mobileRecipeDetailId) renderRecipes();
-    else renderMobileRecipeResults();
+    closeMobileRecipeActionMenus();
   });
 
 }
@@ -1189,6 +1186,30 @@ function getVisibleMobileRecipes() {
   });
 }
 
+function mobileRecipeActionMenuPanel(recipe) {
+  const recipeId = String(recipe._id);
+  return `
+    <div class="mobile-recipe-action-menu" role="menu">
+      <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
+        <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
+        <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
+      </button>
+      <button type="button" role="menuitem" data-move-recipe="${escapeAttr(recipeId)}">
+        <i class="ti ti-books" aria-hidden="true"></i>
+        <span>Move To Cookbook</span>
+      </button>
+      <button type="button" role="menuitem" data-add-recipe-tags="${escapeAttr(recipeId)}">
+        <i class="ti ti-tags" aria-hidden="true"></i>
+        <span>Add Tags</span>
+      </button>
+      <button class="danger-menu-item" type="button" role="menuitem" data-delete-mobile-recipe="${escapeAttr(recipeId)}">
+        <i class="ti ti-trash" aria-hidden="true"></i>
+        <span>Delete</span>
+      </button>
+    </div>
+  `;
+}
+
 function mobileRecipeActionMenu(recipe, { detail = false } = {}) {
   const recipeId = String(recipe._id);
   const isMenuOpen = state.openMobileRecipeMenuId === recipeId;
@@ -1198,26 +1219,7 @@ function mobileRecipeActionMenu(recipe, { detail = false } = {}) {
       <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
         <i class="ti ti-dots-vertical" aria-hidden="true"></i>
       </button>
-      ${isMenuOpen ? `
-        <div class="mobile-recipe-action-menu" role="menu">
-          <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
-            <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
-            <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
-          </button>
-          <button type="button" role="menuitem" data-move-recipe="${escapeAttr(recipeId)}">
-            <i class="ti ti-books" aria-hidden="true"></i>
-            <span>Move To Cookbook</span>
-          </button>
-          <button type="button" role="menuitem" data-add-recipe-tags="${escapeAttr(recipeId)}">
-            <i class="ti ti-tags" aria-hidden="true"></i>
-            <span>Add Tags</span>
-          </button>
-          <button class="danger-menu-item" type="button" role="menuitem" data-delete-mobile-recipe="${escapeAttr(recipeId)}">
-            <i class="ti ti-trash" aria-hidden="true"></i>
-            <span>Delete</span>
-          </button>
-        </div>
-      ` : ''}
+      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe) : ''}
     </div>
   `;
 }
@@ -1345,6 +1347,74 @@ function renderMobileRecipeResults() {
   bindRecipeListActions(grid);
 }
 
+function closeMobileRecipeActionMenus() {
+  state.openMobileRecipeMenuId = '';
+  document.querySelectorAll('.mobile-recipe-action-menu').forEach(menu => menu.remove());
+  document.querySelectorAll('[data-mobile-recipe-menu]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+}
+
+function bindMobileRecipeActionItems(root) {
+  root.querySelectorAll('[data-view-recipe-scan]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.viewRecipeScan));
+      openRecipeScan(recipe);
+    });
+  });
+
+  root.querySelectorAll('[data-move-recipe], [data-organize-recipe]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipeId = button.dataset.moveRecipe || button.dataset.organizeRecipe;
+      const recipe = state.recipes.find(item => String(item._id) === String(recipeId));
+      closeMobileRecipeActionMenus();
+      if (recipe) openRecipeCookbookAssignment(recipe);
+    });
+  });
+
+  root.querySelectorAll('[data-add-recipe-tags]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.addRecipeTags));
+      closeMobileRecipeActionMenus();
+      if (recipe) openRecipeTagsModal(recipe);
+    });
+  });
+
+  root.querySelectorAll('[data-toggle-recipe-favorite]').forEach(button => {
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.toggleRecipeFavorite));
+      if (!recipe) return;
+      closeMobileRecipeActionMenus();
+      await api(`/api/recipes/${recipe._id}/organize`, { method: 'PATCH', body: { favorite: !recipe.favorite } });
+      await loadRecipes();
+      renderRecipes();
+      showToast(recipe.favorite ? 'Removed from favorites.' : 'Recipe favorited.');
+    });
+  });
+
+  root.querySelectorAll('[data-delete-mobile-recipe]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.deleteMobileRecipe));
+      closeMobileRecipeActionMenus();
+      if (recipe) openDeleteRecipeConfirmation(recipe);
+    });
+  });
+
+  root.querySelectorAll('[data-delete-recipe]').forEach(button => {
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const recipeId = button.dataset.deleteRecipe;
+      await api(`/api/recipes/${recipeId}`, { method: 'DELETE' });
+      await Promise.all([loadRecipes(), loadCookbooks(), loadPlanner(), loadStats()]);
+      showToast('Recipe deleted.');
+      renderRecipes();
+    });
+  });
+}
+
 function bindRecipeListActions(root = pageRoot) {
   root.querySelectorAll('[data-open-mobile-recipe]').forEach(card => {
     card.addEventListener('click', event => {
@@ -1362,71 +1432,19 @@ function bindRecipeListActions(root = pageRoot) {
     button.addEventListener('click', event => {
       event.stopPropagation();
       const recipeId = String(button.dataset.mobileRecipeMenu || '');
-      state.openMobileRecipeMenuId = state.openMobileRecipeMenuId === recipeId ? '' : recipeId;
-      if (state.mobileRecipeDetailId) renderRecipes();
-      else renderMobileRecipeResults();
+      const recipe = state.recipes.find(item => String(item._id) === recipeId);
+      const shouldOpen = state.openMobileRecipeMenuId !== recipeId;
+      closeMobileRecipeActionMenus();
+      if (!shouldOpen || !recipe) return;
+
+      state.openMobileRecipeMenuId = recipeId;
+      button.setAttribute('aria-expanded', 'true');
+      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe));
+      bindMobileRecipeActionItems(button.parentElement);
     });
   });
 
-  root.querySelectorAll('[data-view-recipe-scan]').forEach(button => {
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.viewRecipeScan));
-      openRecipeScan(recipe);
-    });
-  });
-
-  root.querySelectorAll('[data-move-recipe], [data-organize-recipe]').forEach(button => {
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      state.openMobileRecipeMenuId = '';
-      const recipeId = button.dataset.moveRecipe || button.dataset.organizeRecipe;
-      const recipe = state.recipes.find(item => String(item._id) === String(recipeId));
-      if (recipe) openRecipeCookbookAssignment(recipe);
-    });
-  });
-
-  root.querySelectorAll('[data-add-recipe-tags]').forEach(button => {
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      state.openMobileRecipeMenuId = '';
-      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.addRecipeTags));
-      if (recipe) openRecipeTagsModal(recipe);
-    });
-  });
-
-  root.querySelectorAll('[data-toggle-recipe-favorite]').forEach(button => {
-    button.addEventListener('click', async event => {
-      event.stopPropagation();
-      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.toggleRecipeFavorite));
-      if (!recipe) return;
-      await api(`/api/recipes/${recipe._id}/organize`, { method: 'PATCH', body: { favorite: !recipe.favorite } });
-      state.openMobileRecipeMenuId = '';
-      await loadRecipes();
-      renderRecipes();
-      showToast(recipe.favorite ? 'Removed from favorites.' : 'Recipe favorited.');
-    });
-  });
-
-  root.querySelectorAll('[data-delete-mobile-recipe]').forEach(button => {
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      state.openMobileRecipeMenuId = '';
-      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.deleteMobileRecipe));
-      if (recipe) openDeleteRecipeConfirmation(recipe);
-    });
-  });
-
-  root.querySelectorAll('[data-delete-recipe]').forEach(button => {
-    button.addEventListener('click', async event => {
-      event.stopPropagation();
-      const recipeId = button.dataset.deleteRecipe;
-      await api(`/api/recipes/${recipeId}`, { method: 'DELETE' });
-      await Promise.all([loadRecipes(), loadCookbooks(), loadPlanner(), loadStats()]);
-      showToast('Recipe deleted.');
-      renderRecipes();
-    });
-  });
+  bindMobileRecipeActionItems(root);
 }
 
 function openDeleteRecipeConfirmation(recipe) {
@@ -1677,6 +1695,7 @@ function renderRecipes() {
 function openRecipeCookbookManager() {
   closeMobileWebSidebarForModal();
   document.querySelector('.cookbook-manager-overlay')?.remove();
+  const lockedScrollY = window.scrollY;
 
   const overlay = document.createElement('section');
   overlay.className = 'time-modal-overlay cookbook-manager-overlay';
@@ -1704,6 +1723,8 @@ function openRecipeCookbookManager() {
   const close = () => {
     overlay.classList.remove('open');
     document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('top');
+    window.scrollTo(0, lockedScrollY);
     window.setTimeout(() => overlay.remove(), 190);
   };
 
@@ -1724,18 +1745,47 @@ function openRecipeCookbookManager() {
         `).join('')
       : '<div class="empty cookbook-manager-empty">Create your first cookbook to group recipes.</div>';
 
-    list.querySelectorAll('[data-save-cookbook]').forEach(button => {
-      button.addEventListener('click', async () => {
-        const cookbookId = button.dataset.saveCookbook;
-        const input = list.querySelector(`[data-cookbook-name="${CSS.escape(cookbookId)}"]`);
-        const name = String(input?.value || '').trim();
-        if (!name) return showToast('Enter a cookbook name.');
+    const saveCookbookName = async row => {
+      const button = row?.querySelector('[data-save-cookbook]');
+      const input = row?.querySelector('[data-cookbook-name]');
+      const cookbookId = String(row?.dataset.cookbookRow || '');
+      const name = String(input?.value || '').trim();
+      if (!cookbookId || !input || !button) return;
+      if (!name) {
+        input.focus();
+        return showToast('Enter a cookbook name.');
+      }
+
+      const originalHtml = button.innerHTML;
+      button.disabled = true;
+      input.disabled = true;
+      button.innerHTML = '<i class="ti ti-loader-2 cookbook-save-spinner" aria-hidden="true"></i>';
+      try {
         await api(`/api/cookbooks/${cookbookId}`, { method: 'PUT', body: { name } });
         await loadCookbooks();
         syncRecipeCookbookToolbar();
         renderList();
         renderMobileRecipeResults();
         showToast('Cookbook renamed.');
+      } catch (error) {
+        button.disabled = false;
+        input.disabled = false;
+        button.innerHTML = originalHtml;
+        input.focus();
+        input.select();
+        showToast(error.message || 'Could not rename cookbook.');
+      }
+    };
+
+    list.querySelectorAll('[data-save-cookbook]').forEach(button => {
+      button.addEventListener('click', () => saveCookbookName(button.closest('[data-cookbook-row]')));
+    });
+
+    list.querySelectorAll('[data-cookbook-name]').forEach(input => {
+      input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        saveCookbookName(input.closest('[data-cookbook-row]'));
       });
     });
 
@@ -1781,6 +1831,7 @@ function openRecipeCookbookManager() {
   });
 
   document.body.appendChild(overlay);
+  document.body.style.setProperty('top', `-${lockedScrollY}px`, 'important');
   document.body.classList.add('modal-open');
   renderList();
   requestAnimationFrame(() => overlay.classList.add('open'));
