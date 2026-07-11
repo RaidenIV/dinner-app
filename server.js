@@ -541,30 +541,94 @@ function extractReadableRecipePageText(html) {
   return cleanOcrOutput(`${decodeHtmlEntities(title)}\n\n${decodeHtmlEntities(body)}`);
 }
 
-async function fetchRecipePageTextFromUrl(url) {
+const RECIPE_IMPORT_BROWSER_HEADERS = {
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/ld+json;q=0.8,image/avif,image/webp,*/*;q=0.7',
+  'accept-language': 'en-US,en;q=0.9',
+  'cache-control': 'no-cache',
+  pragma: 'no-cache',
+  'upgrade-insecure-requests': '1',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+};
+
+async function fetchRecipeImportText(targetUrl, { headers, timeoutMs = 15000, allowedContentTypes } = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url.href, {
+    const response = await fetch(targetUrl, {
       signal: controller.signal,
       redirect: 'follow',
-      headers: {
-        'accept': 'text/html,application/xhtml+xml,application/ld+json;q=0.9,*/*;q=0.6',
-        'user-agent': 'HomePlateRecipeImporter/1.0 (+recipe import)'
-      }
+      headers
     });
-    if (!response.ok) throw new Error(`Recipe page returned HTTP ${response.status}.`);
+    if (!response.ok) {
+      const error = new Error(`Recipe page returned HTTP ${response.status}.`);
+      error.status = response.status;
+      throw error;
+    }
+
     const contentType = response.headers.get('content-type') || '';
-    if (contentType && !/text\/html|application\/xhtml\+xml|application\/ld\+json|text\/plain/i.test(contentType)) {
+    if (contentType && allowedContentTypes && !allowedContentTypes.test(contentType)) {
       throw new Error('That URL does not appear to point to a readable recipe page.');
     }
+
     const text = await response.text();
     if (text.length > 2500000) throw new Error('That recipe page is too large to import.');
-    const rawText = extractReadableRecipePageText(text);
-    if (rawText.length < 40) throw new Error('No readable recipe text was found at that URL.');
-    return rawText;
+    return text;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function extractReaderRecipeText(value) {
+  const text = String(value || '');
+  const marker = 'Markdown Content:';
+  const markerIndex = text.indexOf(marker);
+  const content = markerIndex >= 0 ? text.slice(markerIndex + marker.length) : text;
+  return cleanOcrOutput(content);
+}
+
+async function fetchRecipePageTextFromUrl(url) {
+  let directError = null;
+
+  try {
+    const pageText = await fetchRecipeImportText(url.href, {
+      headers: RECIPE_IMPORT_BROWSER_HEADERS,
+      allowedContentTypes: /text\/html|application\/xhtml\+xml|application\/ld\+json|text\/plain/i
+    });
+    const rawText = extractReadableRecipePageText(pageText);
+    if (rawText.length >= 40) return rawText;
+    directError = new Error('No readable recipe text was found at that URL.');
+  } catch (error) {
+    directError = error;
+    console.warn('Direct recipe URL import failed; trying reader fallback:', error?.message || error);
+  }
+
+  try {
+    const readerUrl = `https://r.jina.ai/${url.href}`;
+    const readerText = await fetchRecipeImportText(readerUrl, {
+      timeoutMs: 20000,
+      headers: {
+        accept: 'text/plain,text/markdown;q=0.9,*/*;q=0.5',
+        'user-agent': 'HomePlateRecipeImporter/1.0 (+recipe import)'
+      },
+      allowedContentTypes: /text\/plain|text\/markdown|text\/html|application\/json/i
+    });
+    const rawText = extractReaderRecipeText(readerText);
+    if (rawText.length < 40) throw new Error('The fallback reader did not find enough recipe text.');
+    return rawText;
+  } catch (readerError) {
+    console.warn('Recipe URL reader fallback failed:', readerError?.message || readerError);
+
+    if (directError?.name === 'AbortError' && readerError?.name === 'AbortError') {
+      const timeoutError = new Error('Recipe URL import timed out. Try again or paste the recipe text manually.');
+      timeoutError.name = 'AbortError';
+      throw timeoutError;
+    }
+
+    if ([401, 403, 406, 429].includes(Number(directError?.status))) {
+      throw new Error('That recipe site blocked automated access. Try another recipe URL or paste the recipe text manually.');
+    }
+
+    throw new Error('Unable to read that recipe page. Try another recipe URL or paste the recipe text manually.');
   }
 }
 
