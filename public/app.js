@@ -2111,7 +2111,7 @@ function openRecipeImportModal() {
                   </div>
                   <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
                   <span class="recipe-import-source-label">Recipe Photo or PDF</span>
-                  <div class="recipe-import-source-actions">
+                  <div class="recipe-import-source-actions recipe-import-inline-buttons">
                     <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
                     <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
                   </div>
@@ -2128,16 +2128,14 @@ function openRecipeImportModal() {
             </div>
             <div class="recipe-import-text-control recipe-import-scan-dependent hidden">
               <button class="secondary" id="recipe-import-view-text" type="button"><i class="ti ti-file-text"></i>View Extracted Text</button>
-              <textarea class="visually-hidden" name="importText" maxlength="15000" aria-label="Extracted or typed recipe text"></textarea>
+              <textarea hidden name="importText" maxlength="15000" aria-label="Extracted or typed recipe text"></textarea>
             </div>
-            <section class="recipe-ai-callout recipe-import-scan-dependent hidden" aria-labelledby="recipe-ai-title">
-              <div>
-                <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
-              </div>
+            <div class="recipe-import-ai-action recipe-import-scan-dependent hidden">
+              <span class="recipe-import-ai-label"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</span>
               <button class="primary recipe-ai-button" id="recipe-import-ai" type="button">${recipeAiMatrixIconMarkup()}<span class="recipe-ai-button-label">Clean with AI</span></button>
-            </section>
+            </div>
             <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
-            <div class="action-row recipe-import-actions recipe-import-scan-dependent hidden">
+            <div class="action-row recipe-import-actions recipe-import-inline-buttons recipe-import-scan-dependent hidden">
               <button class="secondary" id="recipe-import-parse" type="button"><i class="ti ti-wand"></i>Fill From Text</button>
               <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
             </div>
@@ -2164,7 +2162,7 @@ function openRecipeImportModal() {
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
             <div class="modal-actions action-row recipe-import-save-actions recipe-import-scan-dependent hidden">
-              <div class="recipe-import-save-cancel-row">
+              <div class="recipe-import-save-cancel-row recipe-import-inline-buttons">
                 <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
                 <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
               </div>
