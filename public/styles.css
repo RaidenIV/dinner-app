@@ -7090,3 +7090,92 @@ body > .slot-tag-modal .slot-tag-modal-card {
     max-height: 300px;
   }
 }
+
+/* Current request: simplify and animate the mobile recipe import workflow */
+.recipe-import-source-picker {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.recipe-import-options-body {
+  max-height: 960px;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transform-origin: top;
+  transition:
+    max-height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding-bottom 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 0s;
+}
+
+.recipe-import-upload.is-collapsed .recipe-import-options-body {
+  display: grid !important;
+  max-height: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition:
+    max-height 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 150ms ease,
+    transform 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    padding-bottom 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 280ms;
+}
+
+.recipe-import-options-toggle .ti {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.recipe-import-upload.is-collapsed .recipe-import-options-toggle .ti {
+  transform: rotate(180deg);
+}
+
+.recipe-import-scan-dependent:not(.hidden) {
+  animation: recipe-import-section-expand 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top;
+}
+
+@keyframes recipe-import-section-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.recipe-import-actions {
+  display: flex;
+  width: 100%;
+}
+
+.recipe-import-actions > button {
+  width: 100%;
+  justify-content: center;
+}
+
+.recipe-import-fields .recipe-import-autogrow-field textarea {
+  min-height: 44px;
+  max-height: 300px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recipe-import-options-body,
+  .recipe-import-options-toggle .ti {
+    transition: none;
+  }
+
+  .recipe-import-scan-dependent:not(.hidden) {
+    animation: none;
+  }
+}

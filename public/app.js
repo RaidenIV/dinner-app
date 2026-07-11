@@ -2096,7 +2096,7 @@ function openRecipeImportModal() {
               <div class="recipe-import-url-card">
                 <div class="recipe-import-url-card-header">
                   <div>
-                    <span class="recipe-import-source-label">Recipe URL</span>
+                    <span class="recipe-import-source-label">Recipe Source</span>
                     <span id="recipe-import-options-summary">URL, photo, or PDF</span>
                   </div>
                   <button class="secondary recipe-import-options-toggle" id="recipe-import-options-toggle" type="button" aria-expanded="true" aria-label="Minimize import options" title="Minimize import options">
@@ -2133,11 +2133,10 @@ function openRecipeImportModal() {
             </div>
             <div class="recipe-import-ai-action recipe-import-scan-dependent hidden">
               <span class="recipe-import-ai-label"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</span>
-              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button">${recipeAiMatrixIconMarkup()}<span class="recipe-ai-button-label">Clean with AI</span></button>
+              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles" aria-hidden="true"></i><span class="recipe-ai-button-label">Clean with AI</span></button>
             </div>
             <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
-            <div class="action-row recipe-import-actions recipe-import-inline-buttons recipe-import-scan-dependent hidden">
-              <button class="secondary" id="recipe-import-parse" type="button"><i class="ti ti-wand"></i>Fill From Text</button>
+            <div class="action-row recipe-import-actions recipe-import-scan-dependent hidden">
               <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
             </div>
             <div class="form-grid compact-form-grid recipe-import-fields recipe-import-scan-dependent hidden">
@@ -2157,9 +2156,9 @@ function openRecipeImportModal() {
               </div>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-              <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="4" data-recipe-import-autogrow placeholder="One ingredient per line"></textarea></label>
-              <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="4" data-recipe-import-autogrow placeholder="Recipe steps"></textarea></label>
-              <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="3" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
+              <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="1" data-recipe-import-autogrow placeholder="One ingredient per line"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="1" data-recipe-import-autogrow placeholder="Recipe steps"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="1" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
             <div class="modal-actions action-row recipe-import-save-actions recipe-import-save-cancel-row recipe-import-inline-buttons recipe-import-scan-dependent hidden">
@@ -2198,7 +2197,6 @@ function openRecipeImportModal() {
     }
   });
   overlay.querySelector('#recipe-import-ocr')?.addEventListener('click', () => extractRecipeTextFromScan(overlay.querySelector('#recipe-import-form')));
-  overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
   const importForm = overlay.querySelector('#recipe-import-form');
   importForm?.addEventListener('submit', saveImportedRecipe);
@@ -2211,7 +2209,7 @@ function openRecipeImportModal() {
 function resizeRecipeImportTextarea(textarea) {
   if (!textarea) return;
   const computed = window.getComputedStyle(textarea);
-  const minHeight = Number.parseFloat(computed.minHeight) || 112;
+  const minHeight = Number.parseFloat(computed.minHeight) || 44;
   const maxHeight = Number.parseFloat(computed.maxHeight) || 320;
   textarea.style.height = 'auto';
   const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
@@ -2263,9 +2261,9 @@ function setRecipeImportOptionsCollapsed(form, collapsed, summary = '') {
     toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     toggle.setAttribute('aria-label', actionLabel);
     toggle.setAttribute('title', actionLabel);
-    toggle.innerHTML = isCollapsed
-      ? '<i class="ti ti-chevron-down" aria-hidden="true"></i>'
-      : '<i class="ti ti-chevron-up" aria-hidden="true"></i>';
+    if (!toggle.querySelector('.ti')) {
+      toggle.innerHTML = '<i class="ti ti-chevron-up" aria-hidden="true"></i>';
+    }
   }
 }
 
@@ -2501,11 +2499,13 @@ async function extractRecipeTextFromScan(form, { automatic = false } = {}) {
     if (form.elements.importText) form.elements.importText.value = rawText;
     recipeImportAiMeta = null;
     resetRecipeAiReview(form);
+    const populatedSections = fillRecipeImportFromText(form, { automatic: true });
     updateRecipeOcrControls(form, {
       state: 'success',
-      message: 'Text extracted. Review it below, then select Clean with AI.'
+      message: populatedSections
+        ? 'Text extracted and recipe fields filled automatically. Review the draft or use Clean with AI.'
+        : 'Text extracted, but no recipe sections were detected. Review the extracted text or use Clean with AI.'
     });
-    showToast('Recipe text extracted. Review it before AI cleanup.');
   } catch (error) {
     if (requestId !== recipeImportOcrRequestId) return;
     updateRecipeOcrControls(form, {
@@ -2526,8 +2526,8 @@ async function extractRecipeTextFromScan(form, { automatic = false } = {}) {
   }
 }
 
-function fillRecipeImportFromText(form) {
-  if (!form) return;
+function fillRecipeImportFromText(form, { automatic = false } = {}) {
+  if (!form) return 0;
   recipeImportAiMeta = null;
   resetRecipeAiReview(form);
   const text = form.elements.importText?.value || '';
@@ -2555,8 +2555,9 @@ function fillRecipeImportFromText(form) {
   resizeRecipeImportTextareas(form);
   const populatedSections = [parsed.ingredientsText, parsed.instructions, parsed.notes].filter(Boolean).length;
   showToast(populatedSections
-    ? 'Recipe fields filled from extracted text. Review before saving.'
+    ? (automatic ? 'Recipe fields filled automatically. Review before saving.' : 'Recipe fields filled from extracted text. Review before saving.')
     : 'No recipe sections were detected. Review the extracted text or use Clean with AI.');
+  return populatedSections;
 }
 
 async function saveImportedRecipe(event) {
@@ -2693,7 +2694,7 @@ async function cleanRecipeImportWithAi(form) {
     recipeImportAiMeta = null;
     if (review) {
       review.classList.remove('hidden');
-      review.innerHTML = `<div class="recipe-ai-error"><i class="ti ti-alert-circle"></i><div><strong>AI cleanup unavailable</strong><p>${escapeHtml(error.message || 'Try again or use Fill From Text.')}</p></div></div>`;
+      review.innerHTML = `<div class="recipe-ai-error"><i class="ti ti-alert-circle"></i><div><strong>AI cleanup unavailable</strong><p>${escapeHtml(error.message || 'Try again or edit the extracted text.')}</p></div></div>`;
     }
     showToast(error.message || 'AI cleanup failed.');
   } finally {
