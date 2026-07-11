@@ -1269,6 +1269,28 @@ app.post('/api/recipes', authenticate, async (req, res) => {
   }
 });
 
+app.patch('/api/recipes/:id/organize', authenticate, async (req, res) => {
+  const update = {};
+  if (Object.prototype.hasOwnProperty.call(req.body, 'favorite')) {
+    update.favorite = Boolean(req.body.favorite);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'tags')) {
+    update.tags = normalizeTags(req.body.tags);
+  }
+  if (!Object.keys(update).length) {
+    return res.status(400).json({ error: 'No recipe organization changes were provided.' });
+  }
+
+  const recipe = await Recipe.findOneAndUpdate(
+    { _id: req.params.id, householdId: req.householdId },
+    update,
+    { new: true, runValidators: true }
+  );
+  if (!recipe) return res.status(404).json({ error: 'Recipe not found.' });
+  broadcastHouseholdUpdate(req, 'recipes:updated', { recipeId: recipe._id.toString() });
+  res.json(recipe);
+});
+
 app.put('/api/recipes/:id', authenticate, async (req, res) => {
   const update = {
     name: req.body.name,
