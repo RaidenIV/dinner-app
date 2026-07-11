@@ -178,7 +178,9 @@ function bindShell() {
   document.addEventListener('click', event => {
     if (!state.openMobileRecipeMenuId || event.target.closest('.mobile-recipe-menu-wrap')) return;
     state.openMobileRecipeMenuId = '';
-    if (state.page === 'recipes' && !state.mobileRecipeDetailId) renderMobileRecipeResults();
+    if (state.page !== 'recipes') return;
+    if (state.mobileRecipeDetailId) renderRecipes();
+    else renderMobileRecipeResults();
   });
 
 }
@@ -1187,43 +1189,53 @@ function getVisibleMobileRecipes() {
   });
 }
 
-function mobileRecipeCard(recipe) {
-  const mealTypes = (recipe.mealTypes || []).slice(0, 2);
-  const ingredientPreview = (recipe.ingredients || []).slice(0, 3).map(item => item.name).filter(Boolean);
+function mobileRecipeActionMenu(recipe, { detail = false } = {}) {
   const recipeId = String(recipe._id);
   const isMenuOpen = state.openMobileRecipeMenuId === recipeId;
 
   return `
+    <div class="mobile-recipe-menu-wrap${detail ? ' mobile-recipe-detail-menu-wrap' : ''}">
+      <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+        <i class="ti ti-dots-vertical" aria-hidden="true"></i>
+      </button>
+      ${isMenuOpen ? `
+        <div class="mobile-recipe-action-menu" role="menu">
+          <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
+            <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
+            <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
+          </button>
+          <button type="button" role="menuitem" data-move-recipe="${escapeAttr(recipeId)}">
+            <i class="ti ti-books" aria-hidden="true"></i>
+            <span>Move To Cookbook</span>
+          </button>
+          <button type="button" role="menuitem" data-add-recipe-tags="${escapeAttr(recipeId)}">
+            <i class="ti ti-tags" aria-hidden="true"></i>
+            <span>Add Tags</span>
+          </button>
+          <button class="danger-menu-item" type="button" role="menuitem" data-delete-mobile-recipe="${escapeAttr(recipeId)}">
+            <i class="ti ti-trash" aria-hidden="true"></i>
+            <span>Delete</span>
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function mobileRecipeCard(recipe) {
+  const mealTypes = (recipe.mealTypes || []).slice(0, 2);
+  const ingredientPreview = (recipe.ingredients || []).slice(0, 3).map(item => item.name).filter(Boolean);
+  const recipeId = String(recipe._id);
+
+  return `
     <article class="mobile-recipe-card" data-open-mobile-recipe="${escapeAttr(recipeId)}" role="button" tabindex="0" aria-label="Open ${escapeAttr(recipe.name)} recipe">
       <div class="mobile-recipe-card-top">
-        ${recipe.favorite ? '<span class="mobile-recipe-favorite" title="Favorite" aria-label="Favorite recipe"><i class="ti ti-heart-filled"></i></span>' : '<span aria-hidden="true"></span>'}
-        <div class="mobile-recipe-menu-wrap">
-          <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
-            <i class="ti ti-dots-vertical" aria-hidden="true"></i>
-          </button>
-          ${isMenuOpen ? `
-            <div class="mobile-recipe-action-menu" role="menu">
-              <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
-                <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
-                <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
-              </button>
-              <button type="button" role="menuitem" data-move-recipe="${escapeAttr(recipeId)}">
-                <i class="ti ti-books" aria-hidden="true"></i>
-                <span>Move To Cookbook</span>
-              </button>
-              <button type="button" role="menuitem" data-add-recipe-tags="${escapeAttr(recipeId)}">
-                <i class="ti ti-tags" aria-hidden="true"></i>
-                <span>Add Tags</span>
-              </button>
-              <button class="danger-menu-item" type="button" role="menuitem" data-delete-recipe="${escapeAttr(recipeId)}">
-                <i class="ti ti-trash" aria-hidden="true"></i>
-                <span>Delete</span>
-              </button>
-            </div>
-          ` : ''}
+        <div class="mobile-recipe-card-title-wrap">
+          <h3>${escapeHtml(recipe.name)}</h3>
+          ${recipe.favorite ? '<span class="mobile-recipe-favorite" title="Favorite" aria-label="Favorite recipe"><i class="ti ti-heart-filled"></i></span>' : ''}
         </div>
+        ${mobileRecipeActionMenu(recipe)}
       </div>
-      <h3>${escapeHtml(recipe.name)}</h3>
       <div class="mobile-recipe-card-badges">
         ${mealTypes.map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
@@ -1266,8 +1278,10 @@ function mobileRecipeDetailPage(recipe) {
               ${recipe.difficulty ? `<span class="badge">${escapeHtml(recipe.difficulty)}</span>` : ''}
             </div>
           </div>
-          ${recipe.originalScan ? `<button class="secondary small-btn mobile-recipe-view-scan" type="button" data-view-recipe-scan="${escapeAttr(recipe._id)}"><i class="ti ti-photo"></i>View Scan</button>` : ''}
+          ${mobileRecipeActionMenu(recipe, { detail: true })}
         </header>
+
+        ${recipe.originalScan ? `<button class="secondary small-btn mobile-recipe-view-scan" type="button" data-view-recipe-scan="${escapeAttr(recipe._id)}"><i class="ti ti-photo"></i>View Scan</button>` : ''}
 
         <div class="mobile-recipe-detail-stats" aria-label="Recipe timing and rating">
           <div><span>Prep</span><strong>${escapeHtml(formatDurationMinutes(recipe.prepTime || 0))}</strong></div>
@@ -1349,7 +1363,8 @@ function bindRecipeListActions(root = pageRoot) {
       event.stopPropagation();
       const recipeId = String(button.dataset.mobileRecipeMenu || '');
       state.openMobileRecipeMenuId = state.openMobileRecipeMenuId === recipeId ? '' : recipeId;
-      renderMobileRecipeResults();
+      if (state.mobileRecipeDetailId) renderRecipes();
+      else renderMobileRecipeResults();
     });
   });
 
@@ -1393,18 +1408,97 @@ function bindRecipeListActions(root = pageRoot) {
     });
   });
 
+  root.querySelectorAll('[data-delete-mobile-recipe]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      state.openMobileRecipeMenuId = '';
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.deleteMobileRecipe));
+      if (recipe) openDeleteRecipeConfirmation(recipe);
+    });
+  });
+
   root.querySelectorAll('[data-delete-recipe]').forEach(button => {
     button.addEventListener('click', async event => {
       event.stopPropagation();
       const recipeId = button.dataset.deleteRecipe;
       await api(`/api/recipes/${recipeId}`, { method: 'DELETE' });
-      state.openMobileRecipeMenuId = '';
-      if (String(state.mobileRecipeDetailId) === String(recipeId)) state.mobileRecipeDetailId = '';
       await Promise.all([loadRecipes(), loadCookbooks(), loadPlanner(), loadStats()]);
       showToast('Recipe deleted.');
       renderRecipes();
     });
   });
+}
+
+function openDeleteRecipeConfirmation(recipe) {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.recipe-delete-confirm-overlay')?.remove();
+  document.querySelectorAll('.mobile-recipe-action-menu').forEach(menu => menu.remove());
+  document.querySelectorAll('[data-mobile-recipe-menu]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-delete-confirm-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-delete-confirm-card" role="dialog" aria-modal="true" aria-labelledby="recipe-delete-confirm-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-delete-confirm-title">Delete Recipe?</h3>
+          <p class="muted">This action cannot be undone.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-delete-confirm aria-label="Close delete confirmation">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <p class="recipe-delete-confirm-copy">Are you sure you want to delete <strong>${escapeHtml(recipe.name)}</strong>?</p>
+          <div class="modal-actions action-row">
+            <button class="secondary" type="button" data-close-recipe-delete-confirm>Cancel</button>
+            <button class="danger" type="button" data-confirm-recipe-delete>Delete Recipe</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  let isDeleting = false;
+  const close = () => {
+    if (isDeleting) return;
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+
+  overlay.querySelectorAll('[data-close-recipe-delete-confirm]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  overlay.querySelector('[data-confirm-recipe-delete]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    isDeleting = true;
+    button.disabled = true;
+    button.textContent = 'Deleting…';
+    try {
+      await api(`/api/recipes/${recipe._id}`, { method: 'DELETE' });
+      state.openMobileRecipeMenuId = '';
+      if (String(state.mobileRecipeDetailId) === String(recipe._id)) state.mobileRecipeDetailId = '';
+      await Promise.all([loadRecipes(), loadCookbooks(), loadPlanner(), loadStats()]);
+      overlay.remove();
+      document.body.classList.remove('modal-open');
+      renderRecipes();
+      showToast('Recipe deleted.');
+    } catch (error) {
+      isDeleting = false;
+      button.disabled = false;
+      button.textContent = 'Delete Recipe';
+      showToast(error.message || 'Could not delete recipe.');
+    }
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('[data-confirm-recipe-delete]')?.focus();
 }
 
 function openRecipeTagsModal(recipe) {
@@ -1523,6 +1617,7 @@ function renderRecipes() {
           </label>
           <label class="mobile-recipe-sort">
             <span class="visually-hidden">Sort recipes</span>
+            <span class="mobile-recipe-sort-label" aria-hidden="true">Sort</span>
             <select id="mobile-recipe-sort" aria-label="Sort recipes">
               <option value="name-asc" ${state.recipeSort === 'name-asc' ? 'selected' : ''}>A–Z</option>
               <option value="name-desc" ${state.recipeSort === 'name-desc' ? 'selected' : ''}>Z–A</option>
@@ -2424,14 +2519,53 @@ function openRecipeScan(recipe) {
     showToast('No original scan is attached to this recipe.');
     return;
   }
-  const link = document.createElement('a');
-  link.href = recipe.originalScan;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  link.download = recipe.originalScanName || `${slugify(recipe.name || 'recipe')}-scan`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+
+  closeMobileWebSidebarForModal();
+  document.querySelector('.recipe-scan-viewer-overlay')?.remove();
+
+  const fileName = String(recipe.originalScanName || '').trim();
+  const isPdf = /^data:application\/pdf(?:;|,)/i.test(recipe.originalScan) || /\.pdf$/i.test(fileName);
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-scan-viewer-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-scan-viewer-card" role="dialog" aria-modal="true" aria-labelledby="recipe-scan-viewer-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-scan-viewer-title">${escapeHtml(recipe.name || 'Recipe Scan')}</h3>
+          <p class="muted">Original recipe scan</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-scan-viewer aria-label="Close recipe scan">×</button>
+      </header>
+      <div class="recipe-scan-viewer-body" data-recipe-scan-viewer-body></div>
+    </article>
+  `;
+
+  const viewerBody = overlay.querySelector('[data-recipe-scan-viewer-body]');
+  const viewer = document.createElement(isPdf ? 'iframe' : 'img');
+  viewer.className = isPdf ? 'recipe-scan-viewer-pdf' : 'recipe-scan-viewer-image';
+  viewer.src = isPdf ? `${recipe.originalScan}#toolbar=0&navpanes=0` : recipe.originalScan;
+  viewer.title = `${recipe.name || 'Recipe'} original scan`;
+  if (!isPdf) viewer.alt = `${recipe.name || 'Recipe'} original scan`;
+  viewerBody?.appendChild(viewer);
+
+  const close = () => {
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+
+  overlay.querySelectorAll('[data-close-recipe-scan-viewer]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('[data-close-recipe-scan-viewer]')?.focus();
 }
 
 function renderRestaurants() {
