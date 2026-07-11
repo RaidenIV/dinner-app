@@ -2093,36 +2093,37 @@ function openRecipeImportModal() {
         <div class="time-modal-body-inner">
           <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
             <div class="recipe-import-upload" id="recipe-import-options">
-              <div class="recipe-import-options-header">
-                <div>
-                  <strong>Import Options</strong>
-                  <span id="recipe-import-options-summary">URL, photo, or PDF</span>
-                </div>
-                <button class="secondary small-btn recipe-import-options-toggle" id="recipe-import-options-toggle" type="button" aria-expanded="true">
-                  <i class="ti ti-chevron-up" aria-hidden="true"></i><span>Minimize</span>
-                </button>
-              </div>
-              <div class="recipe-import-options-body">
-                <div class="recipe-import-source-picker">
-                  <span class="recipe-import-source-label">Recipe URL</span>
-                  <div class="recipe-import-url-row">
-                    <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="url" />
-                    <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
+              <div class="recipe-import-url-card">
+                <div class="recipe-import-url-card-header">
+                  <div>
+                    <span class="recipe-import-source-label">Recipe URL</span>
+                    <span id="recipe-import-options-summary">URL, photo, or PDF</span>
                   </div>
-                  <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
-                  <span class="recipe-import-source-label">Recipe Photo or PDF</span>
-                  <div class="recipe-import-source-actions recipe-import-inline-buttons">
-                    <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
-                    <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
-                  </div>
-                  <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
-                  <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
-                  <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
+                  <button class="secondary recipe-import-options-toggle" id="recipe-import-options-toggle" type="button" aria-expanded="true" aria-label="Minimize import options" title="Minimize import options">
+                    <i class="ti ti-chevron-up" aria-hidden="true"></i>
+                  </button>
                 </div>
-                <div id="recipe-import-preview" class="recipe-import-preview empty hidden" aria-live="polite"></div>
-                <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
-                  <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
-                  <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+                <div class="recipe-import-options-body">
+                  <div class="recipe-import-source-picker">
+                    <div class="recipe-import-url-row">
+                      <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="url" />
+                      <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
+                    </div>
+                    <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
+                    <span class="recipe-import-source-label">Recipe Photo or PDF</span>
+                    <div class="recipe-import-source-actions recipe-import-inline-buttons">
+                      <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
+                      <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
+                    </div>
+                    <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
+                    <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+                    <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
+                  </div>
+                  <div id="recipe-import-preview" class="recipe-import-preview empty hidden" aria-live="polite"></div>
+                  <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
+                    <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
+                    <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2156,17 +2157,14 @@ function openRecipeImportModal() {
               </div>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-              <label class="wide recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="9" placeholder="One ingredient per line"></textarea></label>
-              <label class="wide">Instructions<textarea name="instructions" placeholder="Recipe steps"></textarea></label>
-              <label class="wide">Import Notes<textarea name="importNotes" placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
+              <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="4" data-recipe-import-autogrow placeholder="One ingredient per line"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="4" data-recipe-import-autogrow placeholder="Recipe steps"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="3" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
-            <div class="modal-actions action-row recipe-import-save-actions recipe-import-scan-dependent hidden">
-              <div class="recipe-import-save-cancel-row recipe-import-inline-buttons">
-                <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
-                <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
-              </div>
-              <button class="primary" type="submit" data-recipe-import-save>Save Imported Recipe</button>
+            <div class="modal-actions action-row recipe-import-save-actions recipe-import-save-cancel-row recipe-import-inline-buttons recipe-import-scan-dependent hidden">
+              <button class="primary" type="submit" data-recipe-import-save>Save</button>
+              <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
             </div>
           </form>
         </div>
@@ -2202,7 +2200,30 @@ function openRecipeImportModal() {
   overlay.querySelector('#recipe-import-ocr')?.addEventListener('click', () => extractRecipeTextFromScan(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
-  overlay.querySelector('#recipe-import-form')?.addEventListener('submit', saveImportedRecipe);
+  const importForm = overlay.querySelector('#recipe-import-form');
+  importForm?.addEventListener('submit', saveImportedRecipe);
+  importForm?.querySelectorAll('[data-recipe-import-autogrow]').forEach(textarea => {
+    textarea.addEventListener('input', () => resizeRecipeImportTextarea(textarea));
+    resizeRecipeImportTextarea(textarea);
+  });
+}
+
+function resizeRecipeImportTextarea(textarea) {
+  if (!textarea) return;
+  const computed = window.getComputedStyle(textarea);
+  const minHeight = Number.parseFloat(computed.minHeight) || 112;
+  const maxHeight = Number.parseFloat(computed.maxHeight) || 320;
+  textarea.style.height = 'auto';
+  const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
+  textarea.style.height = `${Math.ceil(nextHeight)}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
+function resizeRecipeImportTextareas(form) {
+  if (!form) return;
+  window.requestAnimationFrame(() => {
+    form.querySelectorAll('[data-recipe-import-autogrow]').forEach(resizeRecipeImportTextarea);
+  });
 }
 
 function closeRecipeImportModal() {
@@ -2232,15 +2253,19 @@ function setRecipeImportOptionsCollapsed(form, collapsed, summary = '') {
   const summaryElement = form?.querySelector?.('#recipe-import-options-summary');
   if (!options) return;
 
-  options.classList.toggle('is-collapsed', Boolean(collapsed));
+  const isCollapsed = Boolean(collapsed);
+  options.classList.toggle('is-collapsed', isCollapsed);
   if (summaryElement) {
-    summaryElement.textContent = summary || (collapsed ? 'Recipe source loaded' : 'URL, photo, or PDF');
+    summaryElement.textContent = summary || (isCollapsed ? 'Recipe source loaded' : 'URL, photo, or PDF');
   }
   if (toggle) {
-    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    toggle.innerHTML = collapsed
-      ? '<i class="ti ti-chevron-down" aria-hidden="true"></i><span>Expand</span>'
-      : '<i class="ti ti-chevron-up" aria-hidden="true"></i><span>Minimize</span>';
+    const actionLabel = isCollapsed ? 'Expand import options' : 'Minimize import options';
+    toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-label', actionLabel);
+    toggle.setAttribute('title', actionLabel);
+    toggle.innerHTML = isCollapsed
+      ? '<i class="ti ti-chevron-down" aria-hidden="true"></i>'
+      : '<i class="ti ti-chevron-up" aria-hidden="true"></i>';
   }
 }
 
@@ -2507,12 +2532,31 @@ function fillRecipeImportFromText(form) {
   resetRecipeAiReview(form);
   const text = form.elements.importText?.value || '';
   const parsed = parseImportedRecipeText(text, recipeImportScan.name);
-  if (parsed.name && !form.elements.name.value.trim()) form.elements.name.value = parsed.name;
-  if (parsed.ingredientsText && !form.elements.ingredientsText.value.trim()) form.elements.ingredientsText.value = parsed.ingredientsText;
-  if (parsed.instructions && !form.elements.instructions.value.trim()) form.elements.instructions.value = parsed.instructions;
+  const currentName = String(form.elements.name?.value || '').trim();
+
+  if (parsed.name && (!currentName || aiRecipeNameMatchesScanFilename(currentName, recipeImportScan.name))) {
+    form.elements.name.value = parsed.name;
+  }
+  if (parsed.ingredientsText && form.elements.ingredientsText) {
+    form.elements.ingredientsText.value = parsed.ingredientsText;
+  }
+  if (parsed.instructions && form.elements.instructions) {
+    form.elements.instructions.value = parsed.instructions;
+  }
+  if (parsed.notes && form.elements.importNotes) {
+    const existingSourceUrl = String(form.elements.importNotes.value || '')
+      .split(/\r?\n/)
+      .find(line => /^Source URL:/i.test(line.trim())) || '';
+    form.elements.importNotes.value = [parsed.notes, existingSourceUrl].filter(Boolean).join('\n');
+  }
   if (parsed.prepTime) setDurationInputs(form, 'importPrep', parsed.prepTime);
-  if (parsed.cookTime && !Number(form.elements.cookTime.value)) form.elements.cookTime.value = parsed.cookTime;
-  showToast('Import fields filled from text. Review before saving.');
+  if (parsed.cookTime && form.elements.cookTime) form.elements.cookTime.value = parsed.cookTime;
+
+  resizeRecipeImportTextareas(form);
+  const populatedSections = [parsed.ingredientsText, parsed.instructions, parsed.notes].filter(Boolean).length;
+  showToast(populatedSections
+    ? 'Recipe fields filled from extracted text. Review before saving.'
+    : 'No recipe sections were detected. Review the extracted text or use Clean with AI.');
 }
 
 async function saveImportedRecipe(event) {
@@ -2712,6 +2756,7 @@ function applyAiRecipeDraftToForm(form, draft) {
     ].filter(Boolean);
     form.elements.importNotes.value = details.join('\n');
   }
+  resizeRecipeImportTextareas(form);
 }
 
 function formatAiIngredientLine(ingredient) {
@@ -2815,48 +2860,169 @@ function fileToDataUrl(file) {
 }
 
 function parseImportedRecipeText(text, fileName = '') {
-  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const title = lines.find(line => !isRecipeSectionLabel(line) && !isRecipeMetaLine(line)) || titleFromFileName(fileName);
-  const ingredientIndex = lines.findIndex(line => /^ingredients?[:]?$/i.test(line));
-  const instructionIndex = lines.findIndex(line => /^(instructions?|directions?|method|preparation|steps)[:]?$/i.test(line));
-  let ingredientLines = [];
-  let instructionLines = [];
+  const lines = normalizeImportedRecipeLines(text);
+  const sections = { ingredients: [], instructions: [], notes: [] };
+  const prelude = [];
+  let activeSection = '';
+  let title = '';
+  let titleIndex = -1;
 
-  if (ingredientIndex >= 0) {
-    const end = instructionIndex > ingredientIndex ? instructionIndex : lines.length;
-    ingredientLines = lines.slice(ingredientIndex + 1, end);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const heading = getImportedRecipeSection(line);
+    if (heading) {
+      activeSection = heading.section;
+      if (heading.content) sections[activeSection].push(heading.content);
+      continue;
+    }
+
+    if (!title && !isRecipeMetaLine(line) && !looksLikeImportedIngredient(line) && !looksLikeImportedInstruction(line)) {
+      title = line;
+      titleIndex = index;
+      continue;
+    }
+
+    if (activeSection) sections[activeSection].push(line);
+    else if (index !== titleIndex) prelude.push(line);
   }
 
-  if (instructionIndex >= 0) {
-    instructionLines = lines.slice(instructionIndex + 1);
-  }
+  let ingredientLines = cleanImportedRecipeSectionLines(sections.ingredients, 'ingredients');
+  let instructionLines = cleanImportedRecipeSectionLines(sections.instructions, 'instructions');
+  const explicitNoteLines = cleanImportedRecipeSectionLines(sections.notes, 'notes');
+  const contentWithoutTitle = lines.filter((_, index) => index !== titleIndex && !getImportedRecipeSection(lines[index]));
 
-  if (!ingredientLines.length && !instructionLines.length) {
-    const numberedIndex = lines.findIndex(line => /^\d+[.)]\s+/.test(line));
-    if (numberedIndex > 1) {
-      ingredientLines = lines.slice(1, numberedIndex);
-      instructionLines = lines.slice(numberedIndex);
+  if (ingredientLines.length && !instructionLines.length) {
+    const instructionStart = ingredientLines.findIndex((line, index) => index > 0 && looksLikeImportedInstruction(line));
+    if (instructionStart > 0) {
+      instructionLines = ingredientLines.slice(instructionStart);
+      ingredientLines = ingredientLines.slice(0, instructionStart);
     }
   }
+
+  if (!ingredientLines.length || !instructionLines.length) {
+    const fallbackLines = contentWithoutTitle.filter(line => !isRecipeMetaLine(line));
+    const instructionStart = fallbackLines.findIndex(looksLikeImportedInstruction);
+
+    if (!ingredientLines.length && instructionStart > 0) {
+      const beforeInstructions = fallbackLines.slice(0, instructionStart);
+      if (beforeInstructions.some(looksLikeImportedIngredient)) ingredientLines = beforeInstructions;
+    }
+    if (!instructionLines.length && instructionStart >= 0) {
+      instructionLines = fallbackLines.slice(instructionStart);
+    }
+
+    if (!ingredientLines.length) {
+      ingredientLines = fallbackLines.filter(looksLikeImportedIngredient);
+    }
+    if (!instructionLines.length) {
+      instructionLines = fallbackLines.filter(looksLikeImportedInstruction);
+    }
+  }
+
+  ingredientLines = dedupeImportedRecipeLines(ingredientLines)
+    .filter(line => !looksLikeImportedInstruction(line) && !isRecipeMetaLine(line));
+  instructionLines = dedupeImportedRecipeLines(instructionLines)
+    .filter(line => !isRecipeMetaLine(line));
+
+  const usedLines = new Set([...ingredientLines, ...instructionLines].map(normalizeImportedRecipeLineForComparison));
+  const inferredNoteLines = prelude
+    .filter(line => !usedLines.has(normalizeImportedRecipeLineForComparison(line)))
+    .filter(line => !looksLikeImportedIngredient(line) && !looksLikeImportedInstruction(line))
+    .filter(line => !/^(?:prep(?:aration)?\s*time|cook(?:ing)?\s*time|total\s*time)\b/i.test(line));
+  const noteLines = dedupeImportedRecipeLines([...explicitNoteLines, ...inferredNoteLines]);
 
   const prepTime = findRecipeDuration(lines, /prep(?:aration)?\s*time/i);
   const cookTime = findRecipeDuration(lines, /cook(?:ing)?\s*time/i);
 
   return {
-    name: title,
-    ingredientsText: ingredientLines.filter(line => !isRecipeSectionLabel(line) && !isRecipeMetaLine(line)).join('\n'),
-    instructions: instructionLines.filter(line => !isRecipeSectionLabel(line)).join('\n'),
+    name: title || titleFromFileName(fileName),
+    ingredientsText: ingredientLines.join('\n'),
+    instructions: instructionLines.join('\n'),
+    notes: noteLines.join('\n').slice(0, 500),
     prepTime,
     cookTime
   };
 }
 
+function normalizeImportedRecipeLines(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/([^\n])\s+((?:INGREDIENTS?|INSTRUCTIONS?|DIRECTIONS?|METHOD|STEPS?|RECIPE NOTES?|NOTES?|TIPS?)\s*[:\-–—])/g, '$1\n$2')
+    .replace(/(\S)\s+(?=\d+[.)]\s+[A-Z])/g, '$1\n')
+    .split('\n')
+    .map(line => line.replace(/^[|]+|[|]+$/g, '').replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function getImportedRecipeSection(line) {
+  const value = String(line || '').trim().replace(/^#+\s*/, '').replace(/[*_]+/g, '');
+  const sectionPatterns = [
+    ['ingredients', /^(?:ingredients?|what you(?:'|’)?ll need|you will need)\b\s*(?:[:\-–—]\s*)?(.*)$/i],
+    ['instructions', /^(?:instructions?|directions?|method|steps?|procedure|how to make|preparation(?!\s*time\b))\b\s*(?:[:\-–—]\s*)?(.*)$/i],
+    ['notes', /^(?:recipe notes?|notes?|cook(?:'|’)?s notes?|chef(?:'|’)?s notes?|tips?|variations?|serving suggestions?)\b\s*(?:[:\-–—]\s*)?(.*)$/i]
+  ];
+
+  for (const [section, pattern] of sectionPatterns) {
+    const match = value.match(pattern);
+    if (!match) continue;
+    return { section, content: cleanImportedRecipeLine(match[1] || '') };
+  }
+  return null;
+}
+
+function cleanImportedRecipeSectionLines(lines, section) {
+  return (lines || [])
+    .map(cleanImportedRecipeLine)
+    .filter(Boolean)
+    .filter(line => !getImportedRecipeSection(line))
+    .filter(line => section === 'notes' || !isRecipeMetaLine(line));
+}
+
+function cleanImportedRecipeLine(line) {
+  return String(line || '')
+    .replace(/^[-*•▪◦‣]+\s*/, '')
+    .replace(/^\[(?:unclear|illegible)\]\s*$/i, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+function dedupeImportedRecipeLines(lines) {
+  const seen = new Set();
+  return (lines || []).filter(line => {
+    const key = normalizeImportedRecipeLineForComparison(line);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeImportedRecipeLineForComparison(line) {
+  return cleanImportedRecipeLine(line).toLowerCase().replace(/[^a-z0-9¼½¾⅓⅔⅛⅜⅝⅞]+/g, ' ').trim();
+}
+
+function looksLikeImportedInstruction(line) {
+  const value = cleanImportedRecipeLine(line);
+  if (!value) return false;
+  if (/^\d+[.)]\s+/.test(value)) return true;
+  return /^(?:preheat|heat|mix|stir|add|combine|whisk|beat|fold|pour|place|put|arrange|spread|season|bake|cook|roast|grill|broil|boil|simmer|reduce|cover|uncover|chill|refrigerate|freeze|remove|transfer|drain|rinse|slice|chop|cut|blend|process|serve|garnish|let|set|bring|brush|sprinkle|top)\b/i.test(value);
+}
+
+function looksLikeImportedIngredient(line) {
+  const raw = String(line || '').trim();
+  const value = cleanImportedRecipeLine(raw);
+  if (!value || looksLikeImportedInstruction(value)) return false;
+  if (/^[-*•▪◦‣]+\s+/.test(raw)) return true;
+  const startsWithQuantity = /^(?:(?:\d+(?:[ ./⁄-]\d+)?|[¼½¾⅓⅔⅛⅜⅝⅞])|(?:one|two|three|four|five|six|seven|eight|nine|ten))\b/i.test(value);
+  const hasUnit = /\b(?:cups?|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|cloves?|cans?|packages?|pkgs?|sticks?|slices?|sprigs?|pinch(?:es)?|dash(?:es)?|heads?|bunch(?:es)?|large|medium|small)\b/i.test(value);
+  return startsWithQuantity || hasUnit || /\b(?:to taste|as needed|divided|softened|melted|chopped|diced|minced|sliced)\b/i.test(value);
+}
+
 function isRecipeSectionLabel(line) {
-  return /^(ingredients?|instructions?|directions?|method|preparation|steps)[:]?$/i.test(String(line || '').trim());
+  return Boolean(getImportedRecipeSection(line));
 }
 
 function isRecipeMetaLine(line) {
-  return /^(prep|cook|total|serves|servings|yield)\b/i.test(String(line || '').trim());
+  return /^(?:prep(?:aration)?\s*time|cook(?:ing)?\s*time|total\s*time|serves?|servings?|yield|makes?|oven|temperature)\b/i.test(String(line || '').trim());
 }
 
 function findRecipeDuration(lines, labelPattern) {

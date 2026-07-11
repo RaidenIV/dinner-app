@@ -6828,30 +6828,35 @@ body > .slot-tag-modal .slot-tag-modal-card {
   align-items: stretch;
 }
 
-.recipe-import-options-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+.recipe-import-url-card {
+  overflow: hidden;
   border: 1px solid var(--border-mid);
   border-radius: 14px;
   background: var(--surface);
 }
 
-.recipe-import-options-header > div {
+.recipe-import-url-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.recipe-import-url-card-header > div {
   min-width: 0;
   display: grid;
   gap: 2px;
 }
 
-.recipe-import-options-header strong {
+.recipe-import-url-card-header .recipe-import-source-label {
+  margin: 0;
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 850;
 }
 
-.recipe-import-options-header > div > span {
+.recipe-import-url-card-header > div > span:last-child {
   overflow: hidden;
   color: var(--text-secondary);
   font-size: 11px;
@@ -6861,11 +6866,30 @@ body > .slot-tag-modal .slot-tag-modal-card {
 }
 
 .recipe-import-options-toggle {
-  flex: 0 0 auto;
-  width: auto !important;
-  min-width: max-content;
-  min-height: 34px;
-  white-space: nowrap;
+  flex: 0 0 32px;
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px;
+  min-height: 32px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+
+.recipe-import-options-toggle:hover,
+.recipe-import-options-toggle:focus-visible {
+  background: var(--panel-2);
+  color: var(--text-primary);
+}
+
+.recipe-import-options-toggle .ti {
+  margin: 0;
+  font-size: 18px;
 }
 
 .recipe-import-options-body {
@@ -6873,6 +6897,7 @@ body > .slot-tag-modal .slot-tag-modal-card {
   grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr);
   gap: 12px;
   align-items: stretch;
+  padding: 0 12px 12px;
 }
 
 .recipe-import-upload.is-collapsed .recipe-import-options-body {
@@ -6943,7 +6968,7 @@ body > .slot-tag-modal .slot-tag-modal-card {
 
 .recipe-import-save-actions {
   display: grid !important;
-  grid-template-columns: 1fr !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 8px;
   width: 100%;
 }
@@ -6952,9 +6977,19 @@ body > .slot-tag-modal .slot-tag-modal-card {
   width: 100%;
 }
 
-.recipe-import-save-actions > .primary {
+.recipe-import-save-actions > button {
   width: 100%;
+  min-width: 0;
   justify-content: center;
+}
+
+.recipe-import-fields .recipe-import-autogrow-field textarea {
+  width: 100%;
+  min-height: 112px;
+  max-height: 320px;
+  line-height: 1.55;
+  resize: vertical;
+  overflow-y: hidden;
 }
 
 .recipe-import-text-overlay {
@@ -7042,11 +7077,16 @@ body > .slot-tag-modal .slot-tag-modal-card {
 }
 
 @media (max-width: 640px) {
-  .recipe-import-options-header {
+  .recipe-import-url-card-header {
     padding: 9px 10px;
   }
 
-  .recipe-import-options-toggle {
-    padding-inline: 10px;
+  .recipe-import-options-body {
+    padding: 0 10px 10px;
+  }
+
+  .recipe-import-fields .recipe-import-autogrow-field textarea {
+    min-height: 120px;
+    max-height: 300px;
   }
 }
