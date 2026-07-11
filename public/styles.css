@@ -6678,3 +6678,87 @@ body > .slot-tag-modal .slot-tag-modal-card {
 .cookbook-save-spinner {
   animation: cookbookSaveSpin 0.75s linear infinite;
 }
+
+/* Current request: mobile recipe import modal redesign */
+.recipe-import-overlay {
+  align-items: center;
+  padding: 24px 16px;
+}
+
+.recipe-import-modal .modal-close-btn {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--white);
+}
+
+.recipe-import-modal .modal-close-btn:hover,
+.recipe-import-modal .modal-close-btn:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-mid);
+  background: var(--surface);
+}
+
+.recipe-import-url-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.recipe-import-url-row input {
+  min-width: 0;
+}
+
+.recipe-import-url-status.loading {
+  color: var(--brand);
+}
+
+.recipe-import-url-status.success {
+  color: #126b0d;
+}
+
+.recipe-import-url-status.error {
+  color: var(--danger);
+}
+
+.recipe-import-preview.hidden {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  .recipe-import-overlay {
+    align-items: center;
+    padding: 14px;
+  }
+
+  .recipe-import-modal {
+    max-width: calc(100vw - 28px);
+    max-height: calc(100dvh - 28px);
+  }
+
+  .recipe-import-modal .time-modal-header {
+    align-items: flex-start;
+  }
+
+  .recipe-import-modal .modal-close-btn {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    font-size: 20px;
+  }
+
+  .recipe-import-url-row {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-import-url-row button {
+    min-height: 44px;
+    justify-content: center;
+  }
+}

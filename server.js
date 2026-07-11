@@ -117,7 +117,7 @@ const recipeSchema = new mongoose.Schema({
   favorite: { type: Boolean, default: false },
   originalScan: { type: String, default: '', maxlength: 1600000 },
   originalScanName: { type: String, default: '', trim: true, maxlength: 160 },
-  importSource: { type: String, enum: ['', 'printed'], default: '' },
+  importSource: { type: String, enum: ['', 'printed', 'url'], default: '' },
   importNotes: { type: String, default: '', trim: true, maxlength: 500 },
   ocrText: { type: String, default: '', maxlength: 15000 },
   aiCleaned: { type: Boolean, default: false },
@@ -441,6 +441,131 @@ function cleanOcrOutput(value) {
     .replace(/\n{4,}/g, '\n\n\n')
     .trim()
     .slice(0, 15000);
+}
+
+
+function normalizeRecipeImportUrl(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue || rawValue.length > 2000) return null;
+  const withProtocol = /^https?:\/\//i.test(rawValue) ? rawValue : `https://${rawValue}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    parsed.hash = '';
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlEntities(value) {
+  const namedEntities = {
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…'
+  };
+  return String(value || '').replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]+);/gi, (match, entity) => {
+    const key = String(entity || '').toLowerCase();
+    if (key[0] === '#') {
+      const isHex = key[1] === 'x';
+      const codePoint = Number.parseInt(key.slice(isHex ? 2 : 1), isHex ? 16 : 10);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
+    return Object.prototype.hasOwnProperty.call(namedEntities, key) ? namedEntities[key] : match;
+  });
+}
+
+function extractRecipeJsonLdText(html) {
+  const blocks = [...String(html || '').matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const recipes = [];
+  const visit = value => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    const graph = value['@graph'];
+    if (Array.isArray(graph)) graph.forEach(visit);
+    const type = value['@type'];
+    const types = Array.isArray(type) ? type : [type];
+    if (types.some(item => String(item || '').toLowerCase() === 'recipe')) recipes.push(value);
+  };
+
+  for (const block of blocks) {
+    const rawJson = decodeHtmlEntities(block[1]).trim();
+    if (!rawJson) continue;
+    try {
+      visit(JSON.parse(rawJson));
+    } catch {
+      continue;
+    }
+  }
+
+  return recipes.map(recipe => {
+    const lines = [];
+    if (recipe.name) lines.push(String(recipe.name));
+    if (recipe.description) lines.push(`Description: ${String(recipe.description)}`);
+    if (recipe.recipeYield) lines.push(`Servings: ${Array.isArray(recipe.recipeYield) ? recipe.recipeYield.join(', ') : recipe.recipeYield}`);
+    if (recipe.prepTime) lines.push(`Prep time: ${String(recipe.prepTime)}`);
+    if (recipe.cookTime) lines.push(`Cook time: ${String(recipe.cookTime)}`);
+    if (recipe.totalTime) lines.push(`Total time: ${String(recipe.totalTime)}`);
+    if (recipe.recipeCategory) lines.push(`Category: ${Array.isArray(recipe.recipeCategory) ? recipe.recipeCategory.join(', ') : recipe.recipeCategory}`);
+    if (recipe.recipeCuisine) lines.push(`Cuisine: ${Array.isArray(recipe.recipeCuisine) ? recipe.recipeCuisine.join(', ') : recipe.recipeCuisine}`);
+    if (Array.isArray(recipe.recipeIngredient) && recipe.recipeIngredient.length) {
+      lines.push('Ingredients:');
+      lines.push(...recipe.recipeIngredient.map(item => String(item)));
+    }
+    const instructions = Array.isArray(recipe.recipeInstructions) ? recipe.recipeInstructions : recipe.recipeInstructions ? [recipe.recipeInstructions] : [];
+    const instructionLines = instructions.map((step, index) => {
+      if (typeof step === 'string') return `${index + 1}. ${step}`;
+      return `${Number(step.position) || index + 1}. ${step.text || step.name || ''}`.trim();
+    }).filter(line => /\S/.test(line.replace(/^\d+\.\s*/, '')));
+    if (instructionLines.length) {
+      lines.push('Instructions:');
+      lines.push(...instructionLines);
+    }
+    if (recipe.notes) lines.push(`Notes: ${String(recipe.notes)}`);
+    return lines.join('\n');
+  }).filter(Boolean).join('\n\n');
+}
+
+function extractReadableRecipePageText(html) {
+  const jsonLdText = extractRecipeJsonLdText(html);
+  if (jsonLdText.length >= 80) return cleanOcrOutput(jsonLdText);
+
+  const title = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+  const body = String(html || '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<(?:br|\/p|\/li|\/h[1-6]|\/div|\/section|\/article|\/tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+  return cleanOcrOutput(`${decodeHtmlEntities(title)}\n\n${decodeHtmlEntities(body)}`);
+}
+
+async function fetchRecipePageTextFromUrl(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url.href, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        'accept': 'text/html,application/xhtml+xml,application/ld+json;q=0.9,*/*;q=0.6',
+        'user-agent': 'HomePlateRecipeImporter/1.0 (+recipe import)'
+      }
+    });
+    if (!response.ok) throw new Error(`Recipe page returned HTTP ${response.status}.`);
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType && !/text\/html|application\/xhtml\+xml|application\/ld\+json|text\/plain/i.test(contentType)) {
+      throw new Error('That URL does not appear to point to a readable recipe page.');
+    }
+    const text = await response.text();
+    if (text.length > 2500000) throw new Error('That recipe page is too large to import.');
+    const rawText = extractReadableRecipePageText(text);
+    if (rawText.length < 40) throw new Error('No readable recipe text was found at that URL.');
+    return rawText;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const RECIPE_OCR_INSTRUCTIONS = `
@@ -1140,6 +1265,31 @@ app.post('/api/recipes/import/ocr', authenticate, async (req, res) => {
     console.error('Recipe scan OCR failed:', error?.message || error);
     return res.status(502).json({
       error: 'Text extraction failed. Try a clearer, well-lit photo, crop the image to the recipe, or paste the text manually.'
+    });
+  }
+});
+
+
+
+app.post('/api/recipes/import/url', authenticate, async (req, res) => {
+  const normalizedUrl = normalizeRecipeImportUrl(req.body.url);
+  if (!normalizedUrl) {
+    return res.status(400).json({ error: 'Enter a valid http or https recipe URL.' });
+  }
+
+  try {
+    const rawText = await fetchRecipePageTextFromUrl(normalizedUrl);
+    return res.json({
+      url: normalizedUrl.href,
+      rawText,
+      sourceType: 'url'
+    });
+  } catch (error) {
+    console.error('Recipe URL import failed:', error?.message || error);
+    return res.status(502).json({
+      error: error.name === 'AbortError'
+        ? 'Recipe URL import timed out. Try again or paste the recipe text manually.'
+        : (error.message || 'Unable to import that recipe URL. Paste the recipe text manually or try another link.')
     });
   }
 });

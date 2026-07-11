@@ -49,6 +49,8 @@ let recipeImportScan = { dataUrl: '', name: '', type: '' };
 let recipeImportAiMeta = null;
 let recipeImportOcrInFlight = false;
 let recipeImportOcrRequestId = 0;
+let recipeImportSourceType = 'printed';
+let recipeImportSourceUrl = '';
 
 const $ = selector => document.querySelector(selector);
 const pageRoot = $('#page-root');
@@ -1942,6 +1944,8 @@ function openRecipeCookbookAssignment(recipe) {
 function openRecipeImportModal() {
   closeMobileWebSidebarForModal();
   recipeImportScan = { dataUrl: '', name: '', type: '' };
+  recipeImportSourceType = 'printed';
+  recipeImportSourceUrl = '';
   recipeImportAiMeta = null;
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
@@ -1954,8 +1958,8 @@ function openRecipeImportModal() {
     <article class="time-modal-card recipe-import-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-import-title">
       <header class="time-modal-header">
         <div>
-          <h3 id="recipe-import-title">Import Printed Recipe</h3>
-          <p class="muted">Upload or take a photo to extract the recipe text automatically, then use AI to create an editable draft.</p>
+          <h3 id="recipe-import-title">Import Recipe</h3>
+          <p class="muted">Paste a recipe URL, upload a file, or take a photo to create an editable draft.</p>
         </div>
         <button class="secondary modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
       </header>
@@ -1964,6 +1968,12 @@ function openRecipeImportModal() {
           <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
             <div class="recipe-import-upload">
               <div class="recipe-import-source-picker">
+                <span class="recipe-import-source-label">Recipe URL</span>
+                <div class="recipe-import-url-row">
+                  <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="url" />
+                  <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
+                </div>
+                <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
                 <span class="recipe-import-source-label">Recipe Photo or PDF</span>
                 <div class="recipe-import-source-actions">
                   <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
@@ -1973,7 +1983,7 @@ function openRecipeImportModal() {
                 <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
                 <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
               </div>
-              <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
+              <div id="recipe-import-preview" class="recipe-import-preview empty hidden" aria-live="polite"></div>
               <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
                 <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
                 <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
@@ -2035,6 +2045,13 @@ function openRecipeImportModal() {
   overlay.querySelector('#recipe-import-camera-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
+  overlay.querySelector('#recipe-import-url-button')?.addEventListener('click', () => importRecipeFromUrl(overlay.querySelector('#recipe-import-form')));
+  overlay.querySelector('#recipe-import-url')?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      importRecipeFromUrl(overlay.querySelector('#recipe-import-form'));
+    }
+  });
   overlay.querySelector('#recipe-import-ocr')?.addEventListener('click', () => extractRecipeTextFromScan(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
@@ -2069,9 +2086,11 @@ async function handleRecipeImportFile(event) {
   updateRecipeOcrControls(form, { state: 'loading', message: 'Preparing and optimizing the scan…' });
   try {
     recipeImportScan = await recipeSourceFileToDataUrl(file);
+    recipeImportSourceType = 'printed';
+    recipeImportSourceUrl = '';
     setRecipeImportScanDependentVisibility(form, true);
     if (preview) {
-      preview.classList.remove('empty');
+      preview.classList.remove('empty', 'hidden');
       preview.innerHTML = recipeImportScan.type.startsWith('image/')
         ? `<img src="${escapeAttr(recipeImportScan.dataUrl)}" alt="Uploaded recipe scan" /><span>${escapeHtml(recipeImportScan.name)}</span>`
         : `<div><i class="ti ti-file-type-pdf"></i><strong>${escapeHtml(recipeImportScan.name)}</strong><p class="muted">PDF scan attached.</p></div>`;
@@ -2084,8 +2103,8 @@ async function handleRecipeImportFile(event) {
     recipeImportScan = { dataUrl: '', name: '', type: '' };
     setRecipeImportScanDependentVisibility(form, false);
     if (preview) {
-      preview.classList.add('empty');
-      preview.textContent = 'No scan selected.';
+      preview.classList.add('empty', 'hidden');
+      preview.textContent = '';
     }
     updateRecipeOcrControls(form, { state: 'error', message: error.message || 'Unable to read recipe scan.' });
     showToast(error.message || 'Unable to read recipe scan.');
@@ -2094,6 +2113,8 @@ async function handleRecipeImportFile(event) {
 
 function clearRecipeImportScan() {
   recipeImportScan = { dataUrl: '', name: '', type: '' };
+  recipeImportSourceType = 'printed';
+  recipeImportSourceUrl = '';
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
   const fileInput = document.querySelector('#recipe-import-file');
@@ -2104,10 +2125,89 @@ function clearRecipeImportScan() {
   if (fileInput) fileInput.value = '';
   if (cameraInput) cameraInput.value = '';
   if (preview) {
-    preview.classList.add('empty');
-    preview.textContent = 'No scan selected.';
+    preview.classList.add('empty', 'hidden');
+    preview.textContent = '';
   }
   updateRecipeOcrControls(form, { state: 'empty', message: 'Choose a photo or PDF to extract its text.' });
+}
+
+function setRecipeImportUrlStatus(form, message, state = '') {
+  const status = form?.querySelector?.('#recipe-import-url-status');
+  if (!status) return;
+  status.textContent = message;
+  status.className = `muted recipe-import-source-help recipe-import-url-status ${state}`.trim();
+}
+
+function normalizeRecipeImportUrl(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+  const withProtocol = /^https?:\/\//i.test(rawValue) ? rawValue : `https://${rawValue}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
+
+async function importRecipeFromUrl(form) {
+  if (!form) return;
+  const urlInput = form.querySelector('#recipe-import-url');
+  const url = normalizeRecipeImportUrl(urlInput?.value || '');
+  if (!url) {
+    showToast('Enter a valid recipe URL.');
+    urlInput?.focus();
+    return;
+  }
+
+  const button = form.querySelector('#recipe-import-url-button');
+  const originalButtonHtml = button?.innerHTML;
+  if (button) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<i class="ti ti-loader-2 recipe-ai-spinner"></i>Importing...';
+  }
+  setRecipeImportUrlStatus(form, 'Reading the recipe page…', 'loading');
+
+  try {
+    const result = await api('/api/recipes/import/url', {
+      method: 'POST',
+      body: { url }
+    });
+    const rawText = String(result.rawText || '').trim();
+    if (!rawText) throw new Error('No recipe text was found at that URL.');
+
+    recipeImportScan = { dataUrl: '', name: '', type: '' };
+    recipeImportSourceType = 'url';
+    recipeImportSourceUrl = result.url || url;
+    recipeImportAiMeta = null;
+    recipeImportOcrInFlight = false;
+    recipeImportOcrRequestId += 1;
+    const preview = form.querySelector('#recipe-import-preview');
+    if (preview) {
+      preview.classList.add('empty', 'hidden');
+      preview.textContent = '';
+    }
+    if (form.elements.importText) form.elements.importText.value = rawText;
+    if (form.elements.tags && form.elements.tags.value.trim() === 'printed, family') form.elements.tags.value = 'url';
+    if (form.elements.importNotes && !form.elements.importNotes.value.trim()) {
+      form.elements.importNotes.value = `Source URL: ${recipeImportSourceUrl}`;
+    }
+    setRecipeImportScanDependentVisibility(form, true);
+    updateRecipeOcrControls(form, { state: 'ready', message: 'URL imported. Review the text or clean it up with AI.' });
+    setRecipeImportUrlStatus(form, 'Recipe page imported. Review the draft below.', 'success');
+    await cleanRecipeImportWithAi(form);
+  } catch (error) {
+    setRecipeImportUrlStatus(form, error.message || 'Unable to import that recipe URL.', 'error');
+    showToast(error.message || 'Unable to import that recipe URL.');
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = originalButtonHtml;
+    }
+  }
 }
 
 function updateRecipeOcrControls(form, { state = 'ready', message = '' } = {}) {
@@ -2216,6 +2316,7 @@ async function saveImportedRecipe(event) {
   try {
     const body = formToBody(formElement);
     delete body.recipeFile;
+    delete body.recipeUrl;
     delete body.importText;
     body.prepTime = durationInputsToMinutes(formElement, 'importPrep');
     delete body.importPrepHours;
@@ -2223,8 +2324,11 @@ async function saveImportedRecipe(event) {
     body.favorite = getFormCheckboxChecked(formElement, 'favorite');
     body.originalScan = recipeImportScan.dataUrl;
     body.originalScanName = recipeImportScan.name;
-    body.importSource = 'printed';
+    body.importSource = recipeImportSourceType === 'url' ? 'url' : 'printed';
     body.ocrText = String(formElement.elements.importText?.value || '').trim().slice(0, 15000);
+    if (recipeImportSourceUrl && !String(body.importNotes || '').includes(recipeImportSourceUrl)) {
+      body.importNotes = [String(body.importNotes || '').trim(), `Source URL: ${recipeImportSourceUrl}`].filter(Boolean).join('\n');
+    }
     body.aiCleaned = Boolean(recipeImportAiMeta);
     body.aiModel = recipeImportAiMeta?.model || '';
     body.aiConfidence = Number(recipeImportAiMeta?.confidence || 0);
@@ -2240,11 +2344,11 @@ async function saveImportedRecipe(event) {
 
     if (keepOpen) {
       resetRecipeImportForm(formElement);
-      showToast('Recipe imported. Ready for the next binder page.');
+      showToast('Recipe imported. Ready for the next import.');
     } else {
       closeRecipeImportModal();
       renderRecipes();
-      showToast('Printed recipe imported.');
+      showToast(recipeImportSourceType === 'url' ? 'Recipe URL imported.' : 'Printed recipe imported.');
     }
   } catch (error) {
     showToast(error.message || 'Recipe import failed. Please try again.');
@@ -2264,6 +2368,7 @@ function resetRecipeImportForm(form) {
   recipeImportAiMeta = null;
   clearRecipeImportScan();
   resetRecipeAiReview(form);
+  setRecipeImportUrlStatus(form, 'Paste a recipe link to import it, or use a photo/PDF below.');
   form.elements.importText?.focus();
 }
 
