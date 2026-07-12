@@ -2199,6 +2199,13 @@ function openRecipeImportModal() {
   overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
   const importForm = overlay.querySelector('#recipe-import-form');
   importForm?.addEventListener('submit', saveImportedRecipe);
+  importForm?.querySelector('[data-recipe-import-save]')?.addEventListener('click', () => {
+    const urlInput = importForm.querySelector('#recipe-import-url');
+    if (recipeImportSourceType === 'url' && recipeImportSourceUrl && urlInput) {
+      urlInput.value = recipeImportSourceUrl;
+      urlInput.setCustomValidity('');
+    }
+  });
   importForm?.querySelectorAll('[data-recipe-import-autogrow]').forEach(textarea => {
     textarea.addEventListener('input', () => resizeRecipeImportTextarea(textarea));
     resizeRecipeImportTextarea(textarea);
@@ -2416,6 +2423,10 @@ async function importRecipeFromUrl(form) {
     recipeImportScan = { dataUrl: '', name: '', type: '' };
     recipeImportSourceType = 'url';
     recipeImportSourceUrl = result.url || url;
+    if (urlInput) {
+      urlInput.value = recipeImportSourceUrl;
+      urlInput.setCustomValidity('');
+    }
     recipeImportAiMeta = null;
     recipeImportOcrInFlight = false;
     recipeImportOcrRequestId += 1;
@@ -2574,7 +2585,7 @@ async function saveImportedRecipe(event) {
 
   try {
     const body = formToBody(formElement);
-    body.name = String(body.recipeName || '').trim();
+    body.name = String(body.recipeName || '').trim().slice(0, 120);
     delete body.recipeName;
     delete body.recipeFile;
     delete body.recipeUrl;
@@ -2587,8 +2598,17 @@ async function saveImportedRecipe(event) {
     body.originalScanName = recipeImportScan.name;
     body.importSource = recipeImportSourceType === 'url' ? 'url' : 'printed';
     body.ocrText = String(formElement.elements.importText?.value || '').trim().slice(0, 15000);
-    if (recipeImportSourceUrl && !String(body.importNotes || '').includes(recipeImportSourceUrl)) {
-      body.importNotes = [String(body.importNotes || '').trim(), `Source URL: ${recipeImportSourceUrl}`].filter(Boolean).join('\n');
+    if (recipeImportSourceUrl) {
+      const sourceLine = `Source URL: ${recipeImportSourceUrl}`.slice(0, 500);
+      const notesWithoutSource = String(body.importNotes || '')
+        .split(/\r?\n/)
+        .filter(line => !/^Source URL:/i.test(line.trim()))
+        .join('\n')
+        .trim();
+      const availableNoteLength = Math.max(0, 500 - sourceLine.length - (notesWithoutSource ? 1 : 0));
+      body.importNotes = [notesWithoutSource.slice(0, availableNoteLength), sourceLine].filter(Boolean).join('\n').slice(0, 500);
+    } else {
+      body.importNotes = String(body.importNotes || '').trim().slice(0, 500);
     }
     body.aiCleaned = Boolean(recipeImportAiMeta);
     body.aiModel = recipeImportAiMeta?.model || '';
