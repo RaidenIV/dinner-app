@@ -39,6 +39,7 @@ const state = {
   openPlannerMealMenuId: '',
   mobileRecipeDetailId: '',
   openMobileRecipeMenuId: '',
+  desktopRecipeCookbookId: '',
   socket: null,
   realtimeRefreshTimer: null,
   realtimeRefreshInFlight: false,
@@ -150,6 +151,7 @@ function bindShell() {
       if (state.page === 'recipes') {
         state.mobileRecipeDetailId = '';
         state.openMobileRecipeMenuId = '';
+        state.desktopRecipeCookbookId = '';
       }
       document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
       setMobileWebSidebarOpen(false);
@@ -1809,6 +1811,392 @@ function openRecipeTagsModal(recipe) {
   requestAnimationFrame(() => overlay.classList.add('open'));
   overlay.querySelector('input[name="tags"]')?.focus();
 }
+function sortedRecipeCookbooks() {
+  return [...state.cookbooks].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+}
+
+function desktopCookbookRecipes(cookbookId) {
+  if (String(cookbookId) === 'all') return [...state.recipes];
+  const cookbook = state.cookbooks.find(item => String(item._id) === String(cookbookId));
+  if (!cookbook) return [];
+  const recipeIds = new Set((cookbook.recipeIds || []).map(String));
+  return state.recipes.filter(recipe => recipeIds.has(String(recipe._id)));
+}
+
+function desktopCookbookCard(cookbook, { system = false } = {}) {
+  const cookbookId = system ? 'all' : String(cookbook._id);
+  const recipes = system ? state.recipes : desktopCookbookRecipes(cookbookId);
+  const previewNames = recipes
+    .slice()
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+    .slice(0, 3)
+    .map(recipe => recipe.name);
+  return `
+    <button class="desktop-cookbook-card" type="button" data-open-desktop-cookbook="${escapeAttr(cookbookId)}" aria-label="Open ${escapeAttr(cookbook.name)} cookbook">
+      <span class="desktop-cookbook-card-icon"><i class="ti ${system ? 'ti-books' : 'ti-book-2'}" aria-hidden="true"></i></span>
+      <span class="desktop-cookbook-card-copy">
+        <strong>${escapeHtml(cookbook.name)}</strong>
+        <small>${recipes.length} recipe${recipes.length === 1 ? '' : 's'}</small>
+        <span class="desktop-cookbook-preview${previewNames.length ? '' : ' muted'}">${previewNames.length ? previewNames.map(escapeHtml).join(' · ') : 'No recipes added yet.'}</span>
+      </span>
+      <i class="ti ti-chevron-right desktop-cookbook-card-arrow" aria-hidden="true"></i>
+    </button>
+  `;
+}
+
+function desktopCookbookIndex() {
+  const cookbooks = sortedRecipeCookbooks();
+  return `
+    <section class="desktop-recipes-index" aria-label="Recipe cookbooks">
+      <div class="desktop-recipes-primary-action">
+        <button class="primary" id="desktop-open-add-recipe" type="button"><i class="ti ti-plus"></i>Add Recipe</button>
+      </div>
+      <div class="desktop-cookbook-grid">
+        <button class="desktop-cookbook-card desktop-cookbook-add-card" id="desktop-add-cookbook" type="button">
+          <span class="desktop-cookbook-add-icon"><i class="ti ti-plus" aria-hidden="true"></i></span>
+          <span>
+            <strong>Add Cookbook</strong>
+            <small>Create a new recipe collection</small>
+          </span>
+        </button>
+        ${desktopCookbookCard({ name: 'All Recipes' }, { system: true })}
+        ${cookbooks.map(cookbook => desktopCookbookCard(cookbook)).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function desktopCookbookDetail(cookbookId) {
+  const isAllRecipes = String(cookbookId) === 'all';
+  const cookbook = isAllRecipes
+    ? { _id: 'all', name: 'All Recipes', recipeIds: state.recipes.map(recipe => recipe._id) }
+    : state.cookbooks.find(item => String(item._id) === String(cookbookId));
+
+  if (!cookbook) {
+    state.desktopRecipeCookbookId = '';
+    return desktopCookbookIndex();
+  }
+
+  const recipes = desktopCookbookRecipes(cookbook._id)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+
+  return `
+    <section class="desktop-cookbook-detail" data-desktop-cookbook-detail="${escapeAttr(cookbook._id)}">
+      <button class="secondary desktop-cookbook-back" id="desktop-cookbook-back" type="button"><i class="ti ti-arrow-left"></i>Cookbooks</button>
+      <header class="desktop-cookbook-detail-header">
+        <div>
+          <p class="desktop-cookbook-eyebrow">Cookbook</p>
+          <h2>${escapeHtml(cookbook.name)}</h2>
+          <p class="muted">${recipes.length} recipe${recipes.length === 1 ? '' : 's'}</p>
+        </div>
+        <div class="desktop-cookbook-detail-actions">
+          <button class="primary" id="desktop-add-recipe-to-cookbook" type="button"><i class="ti ti-plus"></i>Add Recipe</button>
+          ${isAllRecipes ? '' : `
+            <button class="secondary" id="desktop-edit-cookbook-name" type="button"><i class="ti ti-pencil"></i>Edit Name</button>
+            <button class="secondary" id="desktop-edit-cookbook-recipes" type="button"><i class="ti ti-list-check"></i>Edit Recipes</button>
+          `}
+        </div>
+      </header>
+      <div class="desktop-recipe-library-meta">${escapeHtml(cookbook.name)} · ${recipes.length} recipe${recipes.length === 1 ? '' : 's'}</div>
+      <div class="desktop-recipe-grid desktop-cookbook-recipe-grid">
+        ${recipes.length ? recipes.map(desktopRecipeCard).join('') : '<div class="empty desktop-recipe-empty">This cookbook is empty. Add a new recipe or use Edit Recipes to add saved recipes.</div>'}
+      </div>
+    </section>
+  `;
+}
+
+function closeDesktopRecipeOverlay(overlay) {
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.classList.add('closing');
+  window.setTimeout(() => {
+    overlay.remove();
+    if (!document.querySelector('.time-modal-overlay.open')) document.body.classList.remove('modal-open');
+  }, 180);
+}
+
+async function addRecipeToCookbook(cookbookId, recipeId) {
+  if (!cookbookId || String(cookbookId) === 'all') return;
+  const cookbook = state.cookbooks.find(item => String(item._id) === String(cookbookId));
+  if (!cookbook) return;
+  const recipeIds = [...new Set([...(cookbook.recipeIds || []).map(String), String(recipeId)])];
+  await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { recipeIds } });
+}
+
+function openDesktopRecipeModal({ cookbookId = '' } = {}) {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.desktop-recipe-editor-overlay')?.remove();
+  const cookbooks = sortedRecipeCookbooks();
+  const selectedCookbookId = cookbooks.some(cookbook => String(cookbook._id) === String(cookbookId)) ? String(cookbookId) : '';
+
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay desktop-recipe-editor-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card desktop-recipe-editor-card" role="dialog" aria-modal="true" aria-labelledby="desktop-recipe-editor-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="desktop-recipe-editor-title">Add Recipe</h3>
+          <p class="muted">Create a recipe manually or switch this window to the recipe importer.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-desktop-recipe-editor aria-label="Close add recipe">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <div class="desktop-recipe-modal-switch-row">
+            <button class="secondary" id="desktop-switch-to-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
+          </div>
+          <form id="desktop-recipe-form" class="calendar-meal-form desktop-recipe-form">
+            <div class="form-grid">
+              <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
+              <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
+              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
+              <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
+              <label>Prep Time
+                <span class="duration-clock" aria-label="Prep time duration">
+                  <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+                  <span class="duration-separator" aria-hidden="true">:</span>
+                  <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+                </span>
+              </label>
+              <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+              <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+              <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
+              <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
+              <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
+              <label class="wide">Cookbook
+                <select name="cookbookId">
+                  <option value="">No custom cookbook</option>
+                  ${cookbooks.map(cookbook => `<option value="${escapeAttr(cookbook._id)}" ${String(cookbook._id) === selectedCookbookId ? 'selected' : ''}>${escapeHtml(cookbook.name)}</option>`).join('')}
+                </select>
+              </label>
+              <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+            </div>
+            <div class="modal-actions action-row desktop-recipe-editor-actions">
+              <button class="secondary" type="button" data-close-desktop-recipe-editor>Cancel</button>
+              <button class="primary" type="submit">Save Recipe</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+
+  const close = () => closeDesktopRecipeOverlay(overlay);
+  overlay.querySelectorAll('[data-close-desktop-recipe-editor]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  overlay.querySelector('#desktop-switch-to-import')?.addEventListener('click', () => openRecipeImportModal(overlay));
+  overlay.querySelector('#desktop-recipe-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = formToBody(formElement);
+      const targetCookbookId = String(body.cookbookId || '');
+      delete body.cookbookId;
+      body.prepTime = durationInputsToMinutes(formElement, 'prep');
+      delete body.prepHours;
+      delete body.prepMinutes;
+      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      const recipe = await api('/api/recipes', { method: 'POST', body });
+      await addRecipeToCookbook(targetCookbookId, recipe._id);
+      await Promise.all([loadRecipes(), loadCookbooks(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+      close();
+      renderRecipes();
+    }, 'Recipe saved.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('input[name="name"]')?.focus();
+}
+
+function openDesktopCreateCookbookModal() {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.desktop-cookbook-create-overlay')?.remove();
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay desktop-cookbook-create-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card desktop-cookbook-edit-card" role="dialog" aria-modal="true" aria-labelledby="desktop-cookbook-create-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="desktop-cookbook-create-title">Add Cookbook</h3>
+          <p class="muted">Create a custom collection for your recipes.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-desktop-cookbook-create aria-label="Close add cookbook">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="desktop-cookbook-create-form">
+            <label>Cookbook Name<input name="name" maxlength="80" required placeholder="Weeknight Favorites" /></label>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-desktop-cookbook-create>Cancel</button>
+              <button class="primary" type="submit">Add Cookbook</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+  const close = () => closeDesktopRecipeOverlay(overlay);
+  overlay.querySelectorAll('[data-close-desktop-cookbook-create]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  overlay.querySelector('#desktop-cookbook-create-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await withSaveFeedback(form, async () => {
+      const name = String(new FormData(form).get('name') || '').trim();
+      const cookbook = await api('/api/cookbooks', { method: 'POST', body: { name } });
+      await loadCookbooks();
+      state.desktopRecipeCookbookId = String(cookbook._id);
+      close();
+      renderRecipes();
+    }, 'Cookbook created.');
+  });
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('input[name="name"]')?.focus();
+}
+
+function openDesktopEditCookbookNameModal(cookbook) {
+  if (!cookbook) return;
+  document.querySelector('.desktop-cookbook-name-overlay')?.remove();
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay desktop-cookbook-name-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card desktop-cookbook-edit-card" role="dialog" aria-modal="true" aria-labelledby="desktop-cookbook-name-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="desktop-cookbook-name-title">Edit Cookbook Name</h3>
+          <p class="muted">Rename this cookbook without changing its recipes.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-desktop-cookbook-name aria-label="Close cookbook name editor">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="desktop-cookbook-name-form">
+            <label>Cookbook Name<input name="name" maxlength="80" required value="${escapeAttr(cookbook.name)}" /></label>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-desktop-cookbook-name>Cancel</button>
+              <button class="primary" type="submit">Save Name</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+  const close = () => closeDesktopRecipeOverlay(overlay);
+  overlay.querySelectorAll('[data-close-desktop-cookbook-name]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  overlay.querySelector('#desktop-cookbook-name-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await withSaveFeedback(form, async () => {
+      const name = String(new FormData(form).get('name') || '').trim();
+      await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { name } });
+      await loadCookbooks();
+      close();
+      renderRecipes();
+    }, 'Cookbook renamed.');
+  });
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  const input = overlay.querySelector('input[name="name"]');
+  input?.focus();
+  input?.select();
+}
+
+function openDesktopEditCookbookRecipesModal(cookbook) {
+  if (!cookbook) return;
+  document.querySelector('.desktop-cookbook-recipes-overlay')?.remove();
+  const selectedRecipeIds = new Set((cookbook.recipeIds || []).map(String));
+  const recipes = [...state.recipes].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay desktop-cookbook-recipes-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card desktop-cookbook-recipes-card" role="dialog" aria-modal="true" aria-labelledby="desktop-cookbook-recipes-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="desktop-cookbook-recipes-title">Edit Recipes</h3>
+          <p class="muted">Choose which saved recipes belong in ${escapeHtml(cookbook.name)}.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-desktop-cookbook-recipes aria-label="Close recipe editor">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="desktop-cookbook-recipes-form">
+            <div class="desktop-cookbook-recipe-picker">
+              ${recipes.length ? recipes.map(recipe => `
+                <label class="desktop-cookbook-recipe-option">
+                  <input type="checkbox" name="recipeIds" value="${escapeAttr(recipe._id)}" ${selectedRecipeIds.has(String(recipe._id)) ? 'checked' : ''} />
+                  <span>
+                    <strong>${escapeHtml(recipe.name)}</strong>
+                    <small>${escapeHtml((recipe.mealTypes || [])[0] ? titleCase(recipe.mealTypes[0]) : 'Recipe')}${recipe.cuisine ? ` · ${escapeHtml(recipe.cuisine)}` : ''}</small>
+                  </span>
+                </label>
+              `).join('') : '<div class="empty">No saved recipes yet. Add a recipe first.</div>'}
+            </div>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-desktop-cookbook-recipes>Cancel</button>
+              <button class="primary" type="submit">Save Recipes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+  const close = () => closeDesktopRecipeOverlay(overlay);
+  overlay.querySelectorAll('[data-close-desktop-cookbook-recipes]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  overlay.querySelector('#desktop-cookbook-recipes-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await withSaveFeedback(form, async () => {
+      const recipeIds = new FormData(form).getAll('recipeIds').map(String);
+      await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { recipeIds } });
+      await loadCookbooks();
+      close();
+      renderRecipes();
+    }, 'Cookbook recipes updated.');
+  });
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
+function bindDesktopRecipePage() {
+  $('#desktop-open-add-recipe')?.addEventListener('click', () => openDesktopRecipeModal());
+  $('#desktop-add-cookbook')?.addEventListener('click', openDesktopCreateCookbookModal);
+  document.querySelectorAll('[data-open-desktop-cookbook]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.desktopRecipeCookbookId = String(button.dataset.openDesktopCookbook || '');
+      state.openMobileRecipeMenuId = '';
+      renderRecipes();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
+  $('#desktop-cookbook-back')?.addEventListener('click', () => {
+    state.desktopRecipeCookbookId = '';
+    state.openMobileRecipeMenuId = '';
+    renderRecipes();
+  });
+
+  const activeCookbook = state.cookbooks.find(cookbook => String(cookbook._id) === String(state.desktopRecipeCookbookId));
+  $('#desktop-add-recipe-to-cookbook')?.addEventListener('click', () => openDesktopRecipeModal({ cookbookId: activeCookbook?._id || '' }));
+  $('#desktop-edit-cookbook-name')?.addEventListener('click', () => openDesktopEditCookbookNameModal(activeCookbook));
+  $('#desktop-edit-cookbook-recipes')?.addEventListener('click', () => openDesktopEditCookbookRecipesModal(activeCookbook));
+}
+
 function renderRecipes() {
   const visibleMobileRecipes = getVisibleMobileRecipes();
   let mobileRecipeDetail = state.mobileRecipeDetailId
@@ -1820,41 +2208,9 @@ function renderRecipes() {
   }
   updateRecipeMobileToolbarVisibility();
   pageRoot.innerHTML = `
-    <section class="recipes-desktop-layout grid two">
-      <form id="recipe-form" class="form-card">
-        <div class="form-heading-row">
-          <h3>Add Recipe</h3>
-          <button class="secondary small-btn" id="open-recipe-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
-        </div>
-        <div class="form-grid">
-          <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
-          <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
-          <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
-          <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
-          <label>Prep Time
-            <span class="duration-clock" aria-label="Prep time duration">
-              <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
-              <span class="duration-separator" aria-hidden="true">:</span>
-              <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
-            </span>
-          </label>
-          <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
-          <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
-          <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-          <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
-          <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
-          <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
-        </div>
-        <button class="primary full" type="submit">Save Recipe</button>
-      </form>
+    <section class="recipes-desktop-layout">
+      ${state.desktopRecipeCookbookId ? desktopCookbookDetail(state.desktopRecipeCookbookId) : desktopCookbookIndex()}
     </section>
-
-    <article class="desktop-recipe-library" aria-label="Saved recipes">
-      <h3 class="desktop-recipe-library-meta">All recipes · ${state.recipes.length} recipe${state.recipes.length === 1 ? '' : 's'}</h3>
-      <div class="desktop-recipe-grid">
-        ${state.recipes.length ? state.recipes.map(desktopRecipeCard).join('') : '<div class="empty desktop-recipe-empty">Add your first recipe to start planning meals.</div>'}
-      </div>
-    </article>
 
     <section class="recipes-mobile-layout" aria-label="${mobileRecipeDetail ? 'Recipe details' : 'Recipe cookbooks'}">
       ${mobileRecipeDetail ? mobileRecipeDetailPage(mobileRecipeDetail) : `
@@ -1889,7 +2245,6 @@ function renderRecipes() {
 
   if (!mobileRecipeDetail) syncRecipeCookbookToolbar();
   $('#mobile-recipe-detail-back')?.addEventListener('click', closeMobileRecipeDetail);
-  $('#open-recipe-import')?.addEventListener('click', openRecipeImportModal);
   $('#mobile-open-recipe-import')?.addEventListener('click', openRecipeImportModal);
 
   $('#mobile-recipe-search')?.addEventListener('input', event => {
@@ -1903,22 +2258,7 @@ function renderRecipes() {
     renderMobileRecipeResults();
   });
 
-  $('#recipe-form').addEventListener('submit', async event => {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    await withSaveFeedback(formElement, async () => {
-      const body = formToBody(formElement);
-      body.prepTime = durationInputsToMinutes(formElement, 'prep');
-      delete body.prepHours;
-      delete body.prepMinutes;
-      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
-      await api('/api/recipes', { method: 'POST', body });
-      formElement.reset();
-      await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
-      renderRecipes();
-    }, 'Recipe saved.');
-  });
-
+  bindDesktopRecipePage();
   bindRecipeListActions(pageRoot);
 }
 
@@ -2169,17 +2509,19 @@ function openRecipeCookbookAssignment(recipe) {
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
 
-function openRecipeImportModal() {
+function openRecipeImportModal(existingOverlay = null) {
   closeMobileWebSidebarForModal();
   recipeImportScan = { dataUrl: '', name: '', type: '' };
   recipeImportAiMeta = null;
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
-  document.querySelector('.recipe-import-overlay')?.remove();
+  const reuseOverlay = Boolean(existingOverlay?.isConnected);
+  if (!reuseOverlay) document.querySelector('.recipe-import-overlay')?.remove();
   document.body.classList.add('modal-open');
 
-  const overlay = document.createElement('section');
+  const overlay = reuseOverlay ? existingOverlay : document.createElement('section');
   overlay.className = 'time-modal-overlay recipe-import-overlay';
+  if (reuseOverlay) overlay.classList.add('open');
   overlay.innerHTML = `
     <article class="time-modal-card recipe-import-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-import-title">
       <header class="time-modal-header">
@@ -2253,8 +2595,10 @@ function openRecipeImportModal() {
     </article>
   `;
 
-  document.body.appendChild(overlay);
-  requestAnimationFrame(() => overlay.classList.add('open'));
+  if (!reuseOverlay) {
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('open'));
+  }
 
   overlay.addEventListener('click', event => {
     if (event.target === overlay) closeRecipeImportModal();
