@@ -17,6 +17,7 @@ const state = {
   plannerDisplay: localStorage.getItem('mealPlannerDisplay') || 'cards',
   plannerPreviousWeek: localStorage.getItem('mealPlannerPreviousWeek') === '1',
   plannerCenterToday: localStorage.getItem('mealPlannerCenterToday') !== '0',
+  plannerDisplayOptionsOpen: false,
   historyViewMode: localStorage.getItem('mealPlannerHistoryViewMode') || 'amount',
   historyAmount: localStorage.getItem('mealPlannerHistoryAmount') || '5',
   historyDays: localStorage.getItem('mealPlannerHistoryDays') || '30',
@@ -519,47 +520,85 @@ function renderPlanner() {
   });
   const plansByDate = groupBy(sortedPlans, plan => plan.date);
   const mobilePlannerView = isMobileWebSidebarViewport();
+  if (!mobilePlannerView) state.plannerDisplayOptionsOpen = false;
   const activePlannerDisplay = !mobilePlannerView && state.plannerDisplay === 'grocery' ? 'cards' : state.plannerDisplay;
   const fullCalendar = activePlannerDisplay === 'full-calendar';
   const groceryDisplay = mobilePlannerView && activePlannerDisplay === 'grocery';
   const rangeLabel = getPlannerRangeLabel();
 
-  pageRoot.innerHTML = `
+  const plannerControlsMarkup = `
+    <div class="planner-controls" aria-label="Planner display controls">
+      <label class="planner-control">Range
+        <select id="planner-view-select">
+          ${option('1week', '1 Week', state.plannerView)}
+          ${option('2weeks', '2 Weeks', state.plannerView)}
+          ${option('3weeks', '3 Weeks', state.plannerView)}
+          ${option('month', 'Month', state.plannerView)}
+        </select>
+      </label>
+      <label class="planner-control">Display
+        <select id="planner-display-select">
+          ${option('cards', 'Daily Cards', activePlannerDisplay)}
+          ${option('full-calendar', 'Calendar', activePlannerDisplay)}
+          ${mobilePlannerView ? option('grocery', 'Grocery List', activePlannerDisplay) : ''}
+        </select>
+      </label>
+      <label class="checkbox-line planner-previous-toggle">
+        <input id="planner-previous-week" type="checkbox" ${state.plannerPreviousWeek ? 'checked' : ''} /> Previous Week
+      </label>
+      <label class="checkbox-line planner-center-toggle ${fullCalendar ? 'is-disabled' : ''}" title="Keep today in the center position of the first seven-day row">
+        <input id="planner-center-today" type="checkbox" ${state.plannerCenterToday ? 'checked' : ''} ${fullCalendar ? 'disabled' : ''} /> Center Today
+      </label>
+    </div>`;
+
+  const plannerActionsMarkup = `
+    <div class="toolbar">
+      <button class="secondary" id="prev-week">Previous</button>
+      <button class="ghost" id="this-week">Current</button>
+      <button class="secondary" id="next-week">Next</button>
+      <button class="primary" id="generate-grocery">Generate Grocery List</button>
+    </div>`;
+
+  const desktopPlannerToolbar = `
     <section class="form-card planner-toolbar">
       <div class="planner-toolbar-copy">
         <h3>Meal Planner</h3>
         <p class="muted">${escapeHtml(rangeLabel)}</p>
       </div>
-      <div class="planner-controls" aria-label="Planner display controls">
-        <label class="planner-control">Range
-          <select id="planner-view-select">
-            ${option('1week', '1 Week', state.plannerView)}
-            ${option('2weeks', '2 Weeks', state.plannerView)}
-            ${option('3weeks', '3 Weeks', state.plannerView)}
-            ${option('month', 'Month', state.plannerView)}
-          </select>
-        </label>
-        <label class="planner-control">Display
-          <select id="planner-display-select">
-            ${option('cards', 'Daily Cards', activePlannerDisplay)}
-            ${option('full-calendar', 'Calendar', activePlannerDisplay)}
-            ${mobilePlannerView ? option('grocery', 'Grocery List', activePlannerDisplay) : ''}
-          </select>
-        </label>
-        <label class="checkbox-line planner-previous-toggle">
-          <input id="planner-previous-week" type="checkbox" ${state.plannerPreviousWeek ? 'checked' : ''} /> Previous Week
-        </label>
-        <label class="checkbox-line planner-center-toggle ${fullCalendar ? 'is-disabled' : ''}" title="Keep today in the center position of the first seven-day row">
-          <input id="planner-center-today" type="checkbox" ${state.plannerCenterToday ? 'checked' : ''} ${fullCalendar ? 'disabled' : ''} /> Center Today
-        </label>
+      ${plannerControlsMarkup}
+      ${plannerActionsMarkup}
+    </section>`;
+
+  const mobilePlannerDisplayOptions = `
+    <section class="planner-mobile-display-launcher" aria-label="Meal planner display options">
+      <div class="planner-mobile-display-copy">
+        <h3>Meal Planner</h3>
+        <p class="muted">${escapeHtml(rangeLabel)}</p>
       </div>
-      <div class="toolbar">
-        <button class="secondary" id="prev-week">Previous</button>
-        <button class="ghost" id="this-week">Current</button>
-        <button class="secondary" id="next-week">Next</button>
-        <button class="primary" id="generate-grocery">Generate Grocery List</button>
-      </div>
+      <button class="secondary planner-display-options-button" id="open-planner-display-options" type="button">Display Options</button>
     </section>
+    <div class="time-modal-overlay planner-display-options-overlay" id="planner-display-options-modal" role="dialog" aria-modal="true" aria-labelledby="planner-display-options-title" aria-hidden="true">
+      <article class="time-modal-card planner-display-options-modal">
+        <header class="time-modal-header">
+          <div>
+            <h3 id="planner-display-options-title">Display Options</h3>
+            <p class="muted">${escapeHtml(rangeLabel)}</p>
+          </div>
+          <button class="small-btn modal-close-btn" type="button" data-close-planner-display-options aria-label="Close display options">×</button>
+        </header>
+        <div class="time-modal-body">
+          <div class="time-modal-body-inner">
+            <section class="planner-toolbar planner-toolbar--modal">
+              ${plannerControlsMarkup}
+              ${plannerActionsMarkup}
+            </section>
+          </div>
+        </div>
+      </article>
+    </div>`;
+
+  pageRoot.innerHTML = `
+    ${mobilePlannerView ? mobilePlannerDisplayOptions : desktopPlannerToolbar}
     ${groceryDisplay
       ? `<section class="planner-grocery-display" aria-label="Shared grocery list">${groceryViewMarkup({ embedded: true })}</section>`
       : `<section class="calendar-grid ${fullCalendar ? 'full-calendar-grid' : 'daily-planner-grid'}" aria-label="${fullCalendar ? 'Full meal calendar' : 'Daily meal planner'}">
@@ -568,11 +607,49 @@ function renderPlanner() {
         </section>`}
   `;
 
+  const plannerDisplayOptionsModal = $('#planner-display-options-modal');
+  const openPlannerDisplayOptionsModal = () => {
+    if (!plannerDisplayOptionsModal) return;
+    state.plannerDisplayOptionsOpen = true;
+    plannerDisplayOptionsModal.classList.remove('closing');
+    plannerDisplayOptionsModal.classList.add('open');
+    plannerDisplayOptionsModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    requestAnimationFrame(() => plannerDisplayOptionsModal.querySelector('[data-close-planner-display-options]')?.focus());
+  };
+  const closePlannerDisplayOptionsModal = () => {
+    if (!plannerDisplayOptionsModal) return;
+    state.plannerDisplayOptionsOpen = false;
+    plannerDisplayOptionsModal.classList.remove('open');
+    plannerDisplayOptionsModal.classList.add('closing');
+    plannerDisplayOptionsModal.setAttribute('aria-hidden', 'true');
+    window.setTimeout(() => {
+      plannerDisplayOptionsModal.classList.remove('closing');
+      if (!document.querySelector('.time-modal-overlay.open')) document.body.classList.remove('modal-open');
+    }, 180);
+  };
+  const preservePlannerDisplayOptionsModal = () => {
+    if (mobilePlannerView) state.plannerDisplayOptionsOpen = true;
+  };
+
+  $('#open-planner-display-options')?.addEventListener('click', openPlannerDisplayOptionsModal);
+  plannerDisplayOptionsModal?.querySelectorAll('[data-close-planner-display-options]').forEach(button => {
+    button.addEventListener('click', closePlannerDisplayOptionsModal);
+  });
+  plannerDisplayOptionsModal?.addEventListener('pointerdown', event => {
+    if (event.target === plannerDisplayOptionsModal) closePlannerDisplayOptionsModal();
+  });
+  plannerDisplayOptionsModal?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closePlannerDisplayOptionsModal();
+  });
+  if (mobilePlannerView && state.plannerDisplayOptionsOpen) requestAnimationFrame(openPlannerDisplayOptionsModal);
+
   if (groceryDisplay) {
     bindGroceryView(pageRoot.querySelector('.planner-grocery-display'), renderPlanner);
   }
 
   $('#prev-week').addEventListener('click', async () => {
+    preservePlannerDisplayOptionsModal();
     state.plannerCenterToday = false;
     localStorage.setItem('mealPlannerCenterToday', '0');
     movePlannerPeriod(-1);
@@ -581,6 +658,7 @@ function renderPlanner() {
   });
 
   $('#next-week').addEventListener('click', async () => {
+    preservePlannerDisplayOptionsModal();
     state.plannerCenterToday = false;
     localStorage.setItem('mealPlannerCenterToday', '0');
     movePlannerPeriod(1);
@@ -589,6 +667,7 @@ function renderPlanner() {
   });
 
   $('#this-week').addEventListener('click', async () => {
+    preservePlannerDisplayOptionsModal();
     state.weekStart = startOfWeek(new Date());
     state.plannerPreviousWeek = false;
     state.plannerCenterToday = true;
@@ -599,6 +678,7 @@ function renderPlanner() {
   });
 
   $('#planner-view-select')?.addEventListener('change', async event => {
+    preservePlannerDisplayOptionsModal();
     state.plannerView = event.currentTarget.value;
     localStorage.setItem('mealPlannerView', state.plannerView);
     await loadPlanner();
@@ -606,6 +686,7 @@ function renderPlanner() {
   });
 
   $('#planner-display-select')?.addEventListener('change', async event => {
+    preservePlannerDisplayOptionsModal();
     state.plannerDisplay = event.currentTarget.value;
     localStorage.setItem('mealPlannerDisplay', state.plannerDisplay);
     await loadPlanner();
@@ -613,6 +694,7 @@ function renderPlanner() {
   });
 
   $('#planner-previous-week')?.addEventListener('change', async event => {
+    preservePlannerDisplayOptionsModal();
     state.plannerPreviousWeek = event.currentTarget.checked;
     if (state.plannerPreviousWeek) {
       state.plannerCenterToday = false;
@@ -624,6 +706,7 @@ function renderPlanner() {
   });
 
   $('#planner-center-today')?.addEventListener('change', async event => {
+    preservePlannerDisplayOptionsModal();
     state.plannerCenterToday = event.currentTarget.checked;
     if (state.plannerCenterToday) {
       state.plannerPreviousWeek = false;
@@ -636,6 +719,7 @@ function renderPlanner() {
   });
 
   $('#generate-grocery').addEventListener('click', async () => {
+    preservePlannerDisplayOptionsModal();
     const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: getPlannerRangeStart(), days: getPlannerDisplayDays() } });
     await loadGrocery();
     showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
@@ -4502,6 +4586,9 @@ function getPlannerDisplayDays() {
 }
 
 function getPlannerRangeStart() {
+  if (isMobileWebSidebarViewport() && state.plannerDisplay === 'cards' && !state.plannerPreviousWeek) {
+    return dateISO(new Date());
+  }
   if (state.plannerDisplay === 'cards' && state.plannerCenterToday && !state.plannerPreviousWeek) {
     return addDays(dateISO(new Date()), -3);
   }
