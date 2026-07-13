@@ -40,6 +40,7 @@ const state = {
   mobileRecipeDetailId: '',
   openMobileRecipeMenuId: '',
   desktopRecipeCookbookId: '',
+  desktopRecipeDetailId: '',
   socket: null,
   realtimeRefreshTimer: null,
   realtimeRefreshInFlight: false,
@@ -1383,10 +1384,16 @@ function getVisibleMobileRecipes() {
   });
 }
 
-function mobileRecipeActionMenuPanel(recipe, { includeScan = false } = {}) {
+function mobileRecipeActionMenuPanel(recipe, { includeScan = false, includeEdit = false } = {}) {
   const recipeId = String(recipe._id);
   return `
     <div class="mobile-recipe-action-menu" role="menu">
+      ${includeEdit ? `
+        <button type="button" role="menuitem" data-edit-desktop-recipe="${escapeAttr(recipeId)}">
+          <i class="ti ti-pencil" aria-hidden="true"></i>
+          <span>Edit Recipe</span>
+        </button>
+      ` : ''}
       <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
         <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
         <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
@@ -1422,7 +1429,7 @@ function mobileRecipeActionMenu(recipe, { detail = false, desktop = false } = {}
       <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" ${desktop ? 'data-recipe-menu-context="desktop"' : ''} aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
         <i class="ti ti-dots-vertical" aria-hidden="true"></i>
       </button>
-      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe, { includeScan: desktop }) : ''}
+      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe, { includeScan: desktop, includeEdit: desktop }) : ''}
     </div>
   `;
 }
@@ -1460,7 +1467,7 @@ function desktopRecipeCard(recipe) {
     .join(', ');
 
   return `
-    <article class="desktop-recipe-card">
+    <article class="desktop-recipe-card" data-open-desktop-recipe="${escapeAttr(recipe._id)}" role="button" tabindex="0" aria-label="Open ${escapeAttr(recipe.name)} recipe">
       <div class="desktop-recipe-card-top">
         <h3>${escapeHtml(recipe.name)}</h3>
         ${mobileRecipeActionMenu(recipe, { desktop: true })}
@@ -1474,6 +1481,65 @@ function desktopRecipeCard(recipe) {
         <p class="desktop-recipe-card-preview${ingredientPreview ? '' : ' muted'}">${ingredientPreview ? escapeHtml(ingredientPreview) : 'No ingredients listed.'}</p>
       </div>
     </article>
+  `;
+}
+
+function desktopRecipeDetailPage(recipe, cookbook) {
+  const instructions = String(recipe.instructions || '').trim();
+  const tags = (recipe.tags || []).filter(Boolean);
+  const ingredients = (recipe.ingredients || []).filter(ingredient => ingredient?.name || ingredient?.quantity || ingredient?.unit);
+  const cookbookName = cookbook?.name || 'Cookbook';
+
+  return `
+    <section class="desktop-recipe-detail-page" data-desktop-recipe-detail="${escapeAttr(recipe._id)}">
+      <button class="secondary desktop-recipe-detail-back" id="desktop-recipe-detail-back" type="button">
+        <i class="ti ti-arrow-left" aria-hidden="true"></i>
+        <span>${escapeHtml(cookbookName)}</span>
+      </button>
+
+      <article class="desktop-recipe-detail-content">
+        <header class="desktop-recipe-detail-header">
+          <div class="desktop-recipe-detail-heading">
+            <p class="desktop-cookbook-eyebrow">${escapeHtml(cookbookName)}</p>
+            <div class="desktop-recipe-detail-title-row">
+              <h2>${escapeHtml(recipe.name)}</h2>
+              ${recipe.favorite ? '<span class="desktop-recipe-detail-favorite" title="Favorite recipe" aria-label="Favorite recipe"><i class="ti ti-heart-filled"></i></span>' : ''}
+            </div>
+            <div class="desktop-recipe-detail-badges">
+              ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
+              ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
+              ${recipe.difficulty ? `<span class="badge">${escapeHtml(recipe.difficulty)}</span>` : ''}
+            </div>
+          </div>
+          ${mobileRecipeActionMenu(recipe, { desktop: true })}
+        </header>
+
+        <div class="desktop-recipe-detail-stats" aria-label="Recipe timing and rating">
+          <div><span>Prep</span><strong>${escapeHtml(formatDurationMinutes(recipe.prepTime || 0))}</strong></div>
+          <div><span>Cook</span><strong>${escapeHtml(formatDurationMinutes(recipe.cookTime || 0))}</strong></div>
+          <div><span>Rating</span><strong>${starRating(recipe.rating || 0)}</strong></div>
+          ${recipe.originalScan ? `<button class="secondary desktop-recipe-view-scan" type="button" data-view-recipe-scan="${escapeAttr(recipe._id)}"><i class="ti ti-photo"></i>View Scan</button>` : ''}
+        </div>
+
+        ${tags.length ? `<div class="desktop-recipe-detail-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+
+        <div class="desktop-recipe-detail-sections">
+          <section class="desktop-recipe-detail-section">
+            <h3>Ingredients</h3>
+            ${ingredients.length ? `
+              <ul class="desktop-recipe-ingredient-list">
+                ${ingredients.map(ingredient => `<li>${escapeHtml(formatRecipeIngredient(ingredient))}</li>`).join('')}
+              </ul>
+            ` : '<p class="muted">No ingredients listed.</p>'}
+          </section>
+
+          <section class="desktop-recipe-detail-section">
+            <h3>Instructions</h3>
+            ${instructions ? `<div class="desktop-recipe-instructions">${escapeHtml(instructions).replace(/\n/g, '<br>')}</div>` : '<p class="muted">No instructions listed.</p>'}
+          </section>
+        </div>
+      </article>
+    </section>
   `;
 }
 
@@ -1610,6 +1676,19 @@ function bindMobileRecipeActionItems(root) {
     });
   });
 
+  root.querySelectorAll('[data-edit-desktop-recipe]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.editDesktopRecipe));
+      closeMobileRecipeActionMenus();
+      if (!recipe) return;
+      const cookbookId = state.desktopRecipeCookbookId && state.desktopRecipeCookbookId !== 'all'
+        ? state.desktopRecipeCookbookId
+        : '';
+      openDesktopRecipeModal({ cookbookId, recipe });
+    });
+  });
+
   root.querySelectorAll('[data-toggle-recipe-favorite]').forEach(button => {
     button.addEventListener('click', async event => {
       event.stopPropagation();
@@ -1668,8 +1747,8 @@ function bindRecipeListActions(root = pageRoot) {
 
       state.openMobileRecipeMenuId = recipeId;
       button.setAttribute('aria-expanded', 'true');
-      const includeScan = button.dataset.recipeMenuContext === 'desktop';
-      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe, { includeScan }));
+      const isDesktopMenu = button.dataset.recipeMenuContext === 'desktop';
+      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe, { includeScan: isDesktopMenu, includeEdit: isDesktopMenu }));
       bindMobileRecipeActionItems(button.parentElement);
     });
   });
@@ -1730,6 +1809,7 @@ function openDeleteRecipeConfirmation(recipe) {
       await api(`/api/recipes/${recipe._id}`, { method: 'DELETE' });
       state.openMobileRecipeMenuId = '';
       if (String(state.mobileRecipeDetailId) === String(recipe._id)) state.mobileRecipeDetailId = '';
+      if (String(state.desktopRecipeDetailId) === String(recipe._id)) state.desktopRecipeDetailId = '';
       await Promise.all([loadRecipes(), loadCookbooks(), loadPlanner(), loadStats()]);
       overlay.remove();
       document.body.classList.remove('modal-open');
@@ -1879,6 +1959,11 @@ function desktopCookbookDetail(cookbookId) {
 
   const recipes = desktopCookbookRecipes(cookbook._id)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+  const activeRecipe = state.desktopRecipeDetailId
+    ? recipes.find(recipe => String(recipe._id) === String(state.desktopRecipeDetailId))
+    : null;
+  if (state.desktopRecipeDetailId && !activeRecipe) state.desktopRecipeDetailId = '';
+  if (activeRecipe) return desktopRecipeDetailPage(activeRecipe, cookbook);
 
   return `
     <section class="desktop-cookbook-detail" data-desktop-cookbook-detail="${escapeAttr(cookbook._id)}">
@@ -1923,11 +2008,26 @@ async function addRecipeToCookbook(cookbookId, recipeId) {
   await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { recipeIds } });
 }
 
-function openDesktopRecipeModal({ cookbookId = '' } = {}) {
+function recipeIngredientsToEditableText(recipe) {
+  return (recipe?.ingredients || [])
+    .map(ingredient => [ingredient?.quantity, ingredient?.unit, ingredient?.name, ingredient?.category]
+      .map(value => String(value || '').trim())
+      .join(' | ')
+      .replace(/(?:\s*\|\s*)+$/g, '')
+      .trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function openDesktopRecipeModal({ cookbookId = '', recipe = null } = {}) {
   closeMobileWebSidebarForModal();
   document.querySelector('.desktop-recipe-editor-overlay')?.remove();
+  const isEditing = Boolean(recipe?._id);
   const cookbooks = sortedRecipeCookbooks();
   const selectedCookbookId = cookbooks.some(cookbook => String(cookbook._id) === String(cookbookId)) ? String(cookbookId) : '';
+  const prepTime = Math.max(0, Number(recipe?.prepTime) || 0);
+  const prepHours = String(Math.floor(prepTime / 60)).padStart(2, '0');
+  const prepMinutes = String(prepTime % 60).padStart(2, '0');
 
   const overlay = document.createElement('section');
   overlay.className = 'time-modal-overlay desktop-recipe-editor-overlay';
@@ -1935,45 +2035,47 @@ function openDesktopRecipeModal({ cookbookId = '' } = {}) {
     <article class="time-modal-card desktop-recipe-editor-card" role="dialog" aria-modal="true" aria-labelledby="desktop-recipe-editor-title">
       <header class="time-modal-header">
         <div>
-          <h3 id="desktop-recipe-editor-title">Add Recipe</h3>
-          <p class="muted">Create a recipe manually or switch this window to the recipe importer.</p>
+          <h3 id="desktop-recipe-editor-title">${isEditing ? 'Edit Recipe' : 'Add Recipe'}</h3>
+          <p class="muted">${isEditing ? 'Update this saved recipe.' : 'Create a recipe manually or switch this window to the recipe importer.'}</p>
         </div>
-        <button class="secondary modal-close-btn" type="button" data-close-desktop-recipe-editor aria-label="Close add recipe">×</button>
+        <button class="secondary modal-close-btn" type="button" data-close-desktop-recipe-editor aria-label="Close ${isEditing ? 'edit' : 'add'} recipe">×</button>
       </header>
       <div class="time-modal-body">
         <div class="time-modal-body-inner">
-          <div class="desktop-recipe-modal-switch-row">
-            <button class="secondary" id="desktop-switch-to-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
-          </div>
+          ${isEditing ? '' : `
+            <div class="desktop-recipe-modal-switch-row">
+              <button class="secondary" id="desktop-switch-to-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
+            </div>
+          `}
           <form id="desktop-recipe-form" class="calendar-meal-form desktop-recipe-form">
             <div class="form-grid">
-              <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
-              <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
-              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
-              <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
+              <label>Name<input name="name" required placeholder="Smoked paprika chicken" value="${escapeAttr(recipe?.name || '')}" /></label>
+              <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" value="${escapeAttr(recipe?.cuisine || '')}" /></label>
+              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="${escapeAttr((recipe?.mealTypes || []).join(', '))}" /></label>
+              <label>Tags<input name="tags" placeholder="quick, cheap, healthy" value="${escapeAttr((recipe?.tags || []).join(', '))}" /></label>
               <label>Prep Time
                 <span class="duration-clock" aria-label="Prep time duration">
-                  <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+                  <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepHours)}" aria-label="Prep time hours" />
                   <span class="duration-separator" aria-hidden="true">:</span>
-                  <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+                  <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepMinutes)}" aria-label="Prep time minutes" />
                 </span>
               </label>
-              <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
-              <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
-              <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-              <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
-              <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
+              <label>Cook Time<input name="cookTime" type="number" min="0" value="${escapeAttr(recipe?.cookTime ?? 25)}" /></label>
+              <label>Difficulty<select name="difficulty"><option value="easy" ${String(recipe?.difficulty || 'easy').toLowerCase() === 'easy' ? 'selected' : ''}>Easy</option><option value="medium" ${String(recipe?.difficulty || '').toLowerCase() === 'medium' ? 'selected' : ''}>Medium</option><option value="hard" ${String(recipe?.difficulty || '').toLowerCase() === 'hard' ? 'selected' : ''}>Hard</option></select></label>
+              <label>Rating<select name="rating">${recipeRatingOptions(recipe?.rating || 3)}</select></label>
+              <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry">${escapeHtml(recipeIngredientsToEditableText(recipe))}</textarea></label>
+              <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps">${escapeHtml(recipe?.instructions || '')}</textarea></label>
               <label class="wide">Cookbook
                 <select name="cookbookId">
                   <option value="">No custom cookbook</option>
                   ${cookbooks.map(cookbook => `<option value="${escapeAttr(cookbook._id)}" ${String(cookbook._id) === selectedCookbookId ? 'selected' : ''}>${escapeHtml(cookbook.name)}</option>`).join('')}
                 </select>
               </label>
-              <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+              <label class="wide checkbox-line"><input type="checkbox" name="favorite" ${recipe?.favorite ? 'checked' : ''} /> Favorite</label>
             </div>
             <div class="modal-actions action-row desktop-recipe-editor-actions">
               <button class="secondary" type="button" data-close-desktop-recipe-editor>Cancel</button>
-              <button class="primary" type="submit">Save Recipe</button>
+              <button class="primary" type="submit">${isEditing ? 'Save Changes' : 'Save Recipe'}</button>
             </div>
           </form>
         </div>
@@ -2001,12 +2103,24 @@ function openDesktopRecipeModal({ cookbookId = '' } = {}) {
       delete body.prepHours;
       delete body.prepMinutes;
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
-      const recipe = await api('/api/recipes', { method: 'POST', body });
-      await addRecipeToCookbook(targetCookbookId, recipe._id);
+      if (isEditing) {
+        body.originalScan = recipe.originalScan || '';
+        body.originalScanName = recipe.originalScanName || '';
+        body.importSource = recipe.importSource || '';
+        body.importNotes = recipe.importNotes || '';
+        body.ocrText = recipe.ocrText || '';
+        body.aiCleaned = Boolean(recipe.aiCleaned);
+        body.aiModel = recipe.aiModel || '';
+        body.aiConfidence = Number(recipe.aiConfidence) || 0;
+        body.aiWarnings = recipe.aiWarnings || [];
+        body.aiUnclearFields = recipe.aiUnclearFields || [];
+      }
+      const savedRecipe = await api(isEditing ? `/api/recipes/${recipe._id}` : '/api/recipes', { method: isEditing ? 'PUT' : 'POST', body });
+      await addRecipeToCookbook(targetCookbookId, savedRecipe._id);
       await Promise.all([loadRecipes(), loadCookbooks(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
       close();
       renderRecipes();
-    }, 'Recipe saved.');
+    }, isEditing ? 'Recipe updated.' : 'Recipe saved.');
   });
 
   document.body.appendChild(overlay);
@@ -2179,6 +2293,7 @@ function bindDesktopRecipePage() {
   document.querySelectorAll('[data-open-desktop-cookbook]').forEach(button => {
     button.addEventListener('click', () => {
       state.desktopRecipeCookbookId = String(button.dataset.openDesktopCookbook || '');
+      state.desktopRecipeDetailId = '';
       state.openMobileRecipeMenuId = '';
       renderRecipes();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2187,8 +2302,34 @@ function bindDesktopRecipePage() {
 
   $('#desktop-cookbook-back')?.addEventListener('click', () => {
     state.desktopRecipeCookbookId = '';
+    state.desktopRecipeDetailId = '';
     state.openMobileRecipeMenuId = '';
     renderRecipes();
+  });
+
+  $('#desktop-recipe-detail-back')?.addEventListener('click', () => {
+    state.desktopRecipeDetailId = '';
+    state.openMobileRecipeMenuId = '';
+    renderRecipes();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  document.querySelectorAll('[data-open-desktop-recipe]').forEach(card => {
+    card.addEventListener('click', event => {
+      if (event.target.closest('button, a, input, select, textarea, .mobile-recipe-action-menu')) return;
+      state.desktopRecipeDetailId = String(card.dataset.openDesktopRecipe || '');
+      state.openMobileRecipeMenuId = '';
+      renderRecipes();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    card.addEventListener('keydown', event => {
+      if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      state.desktopRecipeDetailId = String(card.dataset.openDesktopRecipe || '');
+      state.openMobileRecipeMenuId = '';
+      renderRecipes();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   });
 
   const activeCookbook = state.cookbooks.find(cookbook => String(cookbook._id) === String(state.desktopRecipeCookbookId));
