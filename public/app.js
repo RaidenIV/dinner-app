@@ -20,6 +20,8 @@ const state = {
   historyViewMode: localStorage.getItem('mealPlannerHistoryViewMode') || 'amount',
   historyAmount: localStorage.getItem('mealPlannerHistoryAmount') || '5',
   historyDays: localStorage.getItem('mealPlannerHistoryDays') || '30',
+  settingsHistoryOpen: false,
+  settingsStatsOpen: false,
   recipes: [],
   cookbooks: [],
   activeRecipeCookbookId: localStorage.getItem('mealPlannerActiveCookbook') || 'all',
@@ -39,8 +41,6 @@ const state = {
   openPlannerMealMenuId: '',
   mobileRecipeDetailId: '',
   openMobileRecipeMenuId: '',
-  desktopRecipeCookbookId: '',
-  desktopRecipeDetailId: '',
   socket: null,
   realtimeRefreshTimer: null,
   realtimeRefreshInFlight: false,
@@ -51,6 +51,12 @@ let recipeImportScan = { dataUrl: '', name: '', type: '' };
 let recipeImportAiMeta = null;
 let recipeImportOcrInFlight = false;
 let recipeImportOcrRequestId = 0;
+let recipeImportSourceType = 'printed';
+let recipeImportSourceUrl = '';
+
+function recipeAiMatrixIconMarkup() {
+  return `<span class="recipe-ai-matrix-icon" aria-hidden="true">${'<span></span>'.repeat(16)}</span>`;
+}
 
 const $ = selector => document.querySelector(selector);
 const pageRoot = $('#page-root');
@@ -152,9 +158,8 @@ function bindShell() {
       if (state.page === 'recipes') {
         state.mobileRecipeDetailId = '';
         state.openMobileRecipeMenuId = '';
-        state.desktopRecipeCookbookId = '';
       }
-      document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
+      setActiveNav(state.page);
       setMobileWebSidebarOpen(false);
       await renderCurrentPage();
     });
@@ -317,7 +322,14 @@ function updateRecipeMobileToolbarVisibility() {
 
 function setActiveNav(page) {
   appShell.dataset.page = page;
-  document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item.dataset.page === page));
+  document.querySelectorAll('[data-page]').forEach(item => {
+    const isActive = item.dataset.page === page;
+    item.classList.toggle('active', isActive);
+    if (item.closest('.mobile-bottom-nav')) {
+      if (isActive) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    }
+  });
   $('#page-title').textContent = titleCase(page === 'grocery' ? 'Grocery List' : page);
   updateRecipeMobileToolbarVisibility();
 }
@@ -496,194 +508,6 @@ function renderDashboard() {
   });
 }
 
-function isMobilePlannerViewport() {
-  return window.matchMedia('(max-width: 980px)').matches;
-}
-
-function getPlannerDatesForDisplay() {
-  const dates = [...(state.planner?.dates || [])];
-  if (!isMobilePlannerViewport()) return dates;
-
-  const today = dateISO(new Date());
-  const todayIndex = dates.indexOf(today);
-  if (todayIndex <= 0) return dates;
-
-  return [
-    dates[todayIndex],
-    ...dates.slice(todayIndex + 1),
-    ...dates.slice(0, todayIndex)
-  ];
-}
-
-function openPlannerDisplayOptionsModal() {
-  closeMobileWebSidebarForModal();
-  document.querySelector('.planner-display-options-overlay')?.remove();
-
-  const overlay = document.createElement('section');
-  overlay.className = 'time-modal-overlay planner-display-options-overlay';
-  overlay.innerHTML = `
-    <article class="time-modal-card planner-display-options-card" role="dialog" aria-modal="true" aria-labelledby="planner-display-options-title">
-      <header class="time-modal-header">
-        <div>
-          <h3 id="planner-display-options-title">Display Options</h3>
-          <p class="muted">${escapeHtml(getPlannerRangeLabel())}</p>
-        </div>
-        <button class="secondary modal-close-btn" type="button" data-close-planner-display-options aria-label="Close display options">×</button>
-      </header>
-      <div class="time-modal-body">
-        <div class="time-modal-body-inner planner-display-options-body">
-          <div class="planner-display-options-select-row">
-            <label class="planner-control">Range
-              <select id="planner-modal-view-select">
-                ${option('1week', '1 Week', state.plannerView)}
-                ${option('2weeks', '2 Weeks', state.plannerView)}
-                ${option('3weeks', '3 Weeks', state.plannerView)}
-                ${option('month', 'Month', state.plannerView)}
-              </select>
-            </label>
-            <label class="planner-control">Display
-              <select id="planner-modal-display-select">
-                ${option('cards', 'Daily Cards', state.plannerDisplay)}
-                ${option('full-calendar', 'Calendar', state.plannerDisplay)}
-              </select>
-            </label>
-          </div>
-
-          <div class="planner-display-options-toggle-row">
-            <label class="checkbox-line planner-previous-toggle">
-              <input id="planner-modal-previous-week" type="checkbox" ${state.plannerPreviousWeek ? 'checked' : ''} /> Previous Week
-            </label>
-            <label class="checkbox-line planner-center-toggle ${state.plannerDisplay === 'full-calendar' ? 'is-disabled' : ''}" title="Keep today in the center position of the first seven-day row">
-              <input id="planner-modal-center-today" type="checkbox" ${state.plannerCenterToday ? 'checked' : ''} ${state.plannerDisplay === 'full-calendar' ? 'disabled' : ''} /> Center Today
-            </label>
-          </div>
-
-          <div class="planner-display-options-nav">
-            <button class="secondary" id="planner-modal-prev" type="button">Previous</button>
-            <button class="ghost" id="planner-modal-current" type="button">Current</button>
-            <button class="secondary" id="planner-modal-next" type="button">Next</button>
-          </div>
-
-          <button class="primary full" id="planner-modal-generate-grocery" type="button">Generate Grocery List</button>
-        </div>
-      </div>
-    </article>
-  `;
-
-  const close = () => {
-    overlay.classList.remove('open');
-    document.body.classList.remove('modal-open');
-    window.setTimeout(() => overlay.remove(), 190);
-  };
-
-  const refreshPlannerBehindModal = async () => {
-    await loadPlanner();
-    renderPlanner();
-    const rangeCopy = overlay.querySelector('.time-modal-header .muted');
-    if (rangeCopy) rangeCopy.textContent = getPlannerRangeLabel();
-  };
-
-  overlay.querySelectorAll('[data-close-planner-display-options]').forEach(button => button.addEventListener('click', close));
-  overlay.addEventListener('click', event => {
-    if (event.target === overlay) close();
-  });
-  overlay.addEventListener('keydown', event => {
-    if (event.key === 'Escape') close();
-  });
-
-  overlay.querySelector('#planner-modal-view-select')?.addEventListener('change', async event => {
-    state.plannerView = event.currentTarget.value;
-    localStorage.setItem('mealPlannerView', state.plannerView);
-    await refreshPlannerBehindModal();
-  });
-
-  overlay.querySelector('#planner-modal-display-select')?.addEventListener('change', async event => {
-    state.plannerDisplay = event.currentTarget.value;
-    localStorage.setItem('mealPlannerDisplay', state.plannerDisplay);
-    await refreshPlannerBehindModal();
-
-    const centerLabel = overlay.querySelector('.planner-center-toggle');
-    const centerInput = overlay.querySelector('#planner-modal-center-today');
-    const isCalendar = state.plannerDisplay === 'full-calendar';
-    centerLabel?.classList.toggle('is-disabled', isCalendar);
-    if (centerInput) centerInput.disabled = isCalendar;
-  });
-
-  overlay.querySelector('#planner-modal-previous-week')?.addEventListener('change', async event => {
-    state.plannerPreviousWeek = event.currentTarget.checked;
-    if (state.plannerPreviousWeek) {
-      state.plannerCenterToday = false;
-      localStorage.setItem('mealPlannerCenterToday', '0');
-      const centerInput = overlay.querySelector('#planner-modal-center-today');
-      if (centerInput) centerInput.checked = false;
-    }
-    localStorage.setItem('mealPlannerPreviousWeek', state.plannerPreviousWeek ? '1' : '0');
-    await refreshPlannerBehindModal();
-  });
-
-  overlay.querySelector('#planner-modal-center-today')?.addEventListener('change', async event => {
-    state.plannerCenterToday = event.currentTarget.checked;
-    if (state.plannerCenterToday) {
-      state.plannerPreviousWeek = false;
-      state.weekStart = startOfWeek(new Date());
-      localStorage.setItem('mealPlannerPreviousWeek', '0');
-      const previousInput = overlay.querySelector('#planner-modal-previous-week');
-      if (previousInput) previousInput.checked = false;
-    }
-    localStorage.setItem('mealPlannerCenterToday', state.plannerCenterToday ? '1' : '0');
-    await refreshPlannerBehindModal();
-  });
-
-  overlay.querySelector('#planner-modal-prev')?.addEventListener('click', async () => {
-    state.plannerCenterToday = false;
-    localStorage.setItem('mealPlannerCenterToday', '0');
-    movePlannerPeriod(-1);
-    await loadPlanner();
-    close();
-    renderPlanner();
-  });
-
-  overlay.querySelector('#planner-modal-next')?.addEventListener('click', async () => {
-    state.plannerCenterToday = false;
-    localStorage.setItem('mealPlannerCenterToday', '0');
-    movePlannerPeriod(1);
-    await loadPlanner();
-    close();
-    renderPlanner();
-  });
-
-  overlay.querySelector('#planner-modal-current')?.addEventListener('click', async () => {
-    state.weekStart = startOfWeek(new Date());
-    state.plannerPreviousWeek = false;
-    state.plannerCenterToday = true;
-    localStorage.setItem('mealPlannerPreviousWeek', '0');
-    localStorage.setItem('mealPlannerCenterToday', '1');
-    await loadPlanner();
-    close();
-    renderPlanner();
-  });
-
-  overlay.querySelector('#planner-modal-generate-grocery')?.addEventListener('click', async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = 'Generating…';
-    try {
-      const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: getPlannerRangeStart(), days: getPlannerDisplayDays() } });
-      await loadGrocery();
-      showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
-    } finally {
-      button.disabled = false;
-      button.textContent = originalText;
-    }
-  });
-
-  document.body.appendChild(overlay);
-  document.body.classList.add('modal-open');
-  requestAnimationFrame(() => overlay.classList.add('open'));
-  overlay.querySelector('#planner-modal-view-select')?.focus();
-}
-
 function renderPlanner() {
   const mealOrder = new Map(mealTypes.map((type, index) => [type, index]));
   const sortedPlans = [...state.planner.plans].sort((a, b) => {
@@ -694,12 +518,14 @@ function renderPlanner() {
     return (mealOrder.get(a.mealType) ?? 99) - (mealOrder.get(b.mealType) ?? 99);
   });
   const plansByDate = groupBy(sortedPlans, plan => plan.date);
-  const fullCalendar = state.plannerDisplay === 'full-calendar';
+  const mobilePlannerView = isMobileWebSidebarViewport();
+  const activePlannerDisplay = !mobilePlannerView && state.plannerDisplay === 'grocery' ? 'cards' : state.plannerDisplay;
+  const fullCalendar = activePlannerDisplay === 'full-calendar';
+  const groceryDisplay = mobilePlannerView && activePlannerDisplay === 'grocery';
   const rangeLabel = getPlannerRangeLabel();
-  const plannerDates = getPlannerDatesForDisplay();
 
   pageRoot.innerHTML = `
-    <section class="form-card planner-toolbar planner-toolbar-desktop">
+    <section class="form-card planner-toolbar">
       <div class="planner-toolbar-copy">
         <h3>Meal Planner</h3>
         <p class="muted">${escapeHtml(rangeLabel)}</p>
@@ -715,8 +541,9 @@ function renderPlanner() {
         </label>
         <label class="planner-control">Display
           <select id="planner-display-select">
-            ${option('cards', 'Daily Cards', state.plannerDisplay)}
-            ${option('full-calendar', 'Calendar', state.plannerDisplay)}
+            ${option('cards', 'Daily Cards', activePlannerDisplay)}
+            ${option('full-calendar', 'Calendar', activePlannerDisplay)}
+            ${mobilePlannerView ? option('grocery', 'Grocery List', activePlannerDisplay) : ''}
           </select>
         </label>
         <label class="checkbox-line planner-previous-toggle">
@@ -733,17 +560,17 @@ function renderPlanner() {
         <button class="primary" id="generate-grocery">Generate Grocery List</button>
       </div>
     </section>
-    <button class="secondary planner-display-options-button" id="planner-display-options-button" type="button">
-      <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
-      <span>Display Options</span>
-    </button>
-    <section class="calendar-grid ${fullCalendar ? 'full-calendar-grid' : 'daily-planner-grid'}" aria-label="${fullCalendar ? 'Full meal calendar' : 'Daily meal planner'}">
-      ${fullCalendar ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => `<div class="full-calendar-weekday">${day}</div>`).join('') : ''}
-      ${plannerDates.map(date => plannerDayCard(date, plansByDate[date] || [], fullCalendar)).join('')}
-    </section>
+    ${groceryDisplay
+      ? `<section class="planner-grocery-display" aria-label="Shared grocery list">${groceryViewMarkup({ embedded: true })}</section>`
+      : `<section class="calendar-grid ${fullCalendar ? 'full-calendar-grid' : 'daily-planner-grid'}" aria-label="${fullCalendar ? 'Full meal calendar' : 'Daily meal planner'}">
+          ${fullCalendar ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => `<div class="full-calendar-weekday">${day}</div>`).join('') : ''}
+          ${state.planner.dates.map(date => plannerDayCard(date, plansByDate[date] || [], fullCalendar)).join('')}
+        </section>`}
   `;
 
-  $('#planner-display-options-button')?.addEventListener('click', openPlannerDisplayOptionsModal);
+  if (groceryDisplay) {
+    bindGroceryView(pageRoot.querySelector('.planner-grocery-display'), renderPlanner);
+  }
 
   $('#prev-week').addEventListener('click', async () => {
     state.plannerCenterToday = false;
@@ -812,6 +639,7 @@ function renderPlanner() {
     const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: getPlannerRangeStart(), days: getPlannerDisplayDays() } });
     await loadGrocery();
     showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
+    if (groceryDisplay) renderPlanner();
   });
 
   pageRoot.querySelectorAll('[data-add-date]').forEach(button => {
@@ -1384,14 +1212,14 @@ function getVisibleMobileRecipes() {
   });
 }
 
-function mobileRecipeActionMenuPanel(recipe, { includeScan = false, includeEdit = false } = {}) {
+function mobileRecipeActionMenuPanel(recipe, { includeEdit = false } = {}) {
   const recipeId = String(recipe._id);
   return `
     <div class="mobile-recipe-action-menu" role="menu">
       ${includeEdit ? `
-        <button type="button" role="menuitem" data-edit-desktop-recipe="${escapeAttr(recipeId)}">
+        <button type="button" role="menuitem" data-edit-mobile-recipe="${escapeAttr(recipeId)}">
           <i class="ti ti-pencil" aria-hidden="true"></i>
-          <span>Edit Recipe</span>
+          <span>Edit</span>
         </button>
       ` : ''}
       <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
@@ -1406,12 +1234,6 @@ function mobileRecipeActionMenuPanel(recipe, { includeScan = false, includeEdit 
         <i class="ti ti-tags" aria-hidden="true"></i>
         <span>Add Tags</span>
       </button>
-      ${includeScan && recipe.originalScan ? `
-        <button type="button" role="menuitem" data-view-recipe-scan="${escapeAttr(recipeId)}">
-          <i class="ti ti-photo" aria-hidden="true"></i>
-          <span>View Scan</span>
-        </button>
-      ` : ''}
       <button class="danger-menu-item" type="button" role="menuitem" data-delete-mobile-recipe="${escapeAttr(recipeId)}">
         <i class="ti ti-trash" aria-hidden="true"></i>
         <span>Delete</span>
@@ -1420,16 +1242,16 @@ function mobileRecipeActionMenuPanel(recipe, { includeScan = false, includeEdit 
   `;
 }
 
-function mobileRecipeActionMenu(recipe, { detail = false, desktop = false } = {}) {
+function mobileRecipeActionMenu(recipe, { detail = false } = {}) {
   const recipeId = String(recipe._id);
   const isMenuOpen = state.openMobileRecipeMenuId === recipeId;
 
   return `
-    <div class="mobile-recipe-menu-wrap${detail ? ' mobile-recipe-detail-menu-wrap' : ''}${desktop ? ' desktop-recipe-menu-wrap' : ''}">
-      <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" ${desktop ? 'data-recipe-menu-context="desktop"' : ''} aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+    <div class="mobile-recipe-menu-wrap${detail ? ' mobile-recipe-detail-menu-wrap' : ''}">
+      <button class="mobile-recipe-kebab-btn" type="button" data-mobile-recipe-menu="${escapeAttr(recipeId)}" aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
         <i class="ti ti-dots-vertical" aria-hidden="true"></i>
       </button>
-      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe, { includeScan: desktop, includeEdit: desktop }) : ''}
+      ${isMenuOpen ? mobileRecipeActionMenuPanel(recipe, { includeEdit: detail }) : ''}
     </div>
   `;
 }
@@ -1455,91 +1277,6 @@ function mobileRecipeCard(recipe) {
       <p class="mobile-recipe-card-time">${formatDurationMinutes(recipe.prepTime || 0)} prep · ${formatDurationMinutes(recipe.cookTime || 0)} cook</p>
       ${ingredientPreview.length ? `<p class="mobile-recipe-card-preview">${ingredientPreview.map(escapeHtml).join(', ')}${(recipe.ingredients || []).length > 3 ? '…' : ''}</p>` : '<p class="mobile-recipe-card-preview muted">No ingredients listed.</p>'}
     </article>
-  `;
-}
-
-function desktopRecipeCard(recipe) {
-  const primaryMealType = (recipe.mealTypes || [])[0];
-  const ingredientPreview = (recipe.ingredients || [])
-    .slice(0, 4)
-    .map(formatRecipeIngredient)
-    .filter(Boolean)
-    .join(', ');
-
-  return `
-    <article class="desktop-recipe-card" data-open-desktop-recipe="${escapeAttr(recipe._id)}" role="button" tabindex="0" aria-label="Open ${escapeAttr(recipe.name)} recipe">
-      <div class="desktop-recipe-card-top">
-        <h3>${escapeHtml(recipe.name)}</h3>
-        ${mobileRecipeActionMenu(recipe, { desktop: true })}
-      </div>
-      <div class="desktop-recipe-card-body">
-        <div class="desktop-recipe-card-badges">
-          ${primaryMealType ? `<span class="badge accent">${escapeHtml(primaryMealType)}</span>` : ''}
-          ${recipe.favorite ? '<span class="desktop-recipe-favorite" title="Favorite recipe" aria-label="Favorite recipe"><i class="ti ti-heart-filled"></i></span>' : ''}
-        </div>
-        <p class="desktop-recipe-card-time">${formatDurationMinutes(recipe.prepTime || 0)} prep · ${formatDurationMinutes(recipe.cookTime || 0)} cook</p>
-        <p class="desktop-recipe-card-preview${ingredientPreview ? '' : ' muted'}">${ingredientPreview ? escapeHtml(ingredientPreview) : 'No ingredients listed.'}</p>
-      </div>
-    </article>
-  `;
-}
-
-function desktopRecipeDetailPage(recipe, cookbook) {
-  const instructions = String(recipe.instructions || '').trim();
-  const tags = (recipe.tags || []).filter(Boolean);
-  const ingredients = (recipe.ingredients || []).filter(ingredient => ingredient?.name || ingredient?.quantity || ingredient?.unit);
-  const cookbookName = cookbook?.name || 'Cookbook';
-
-  return `
-    <section class="desktop-recipe-detail-page" data-desktop-recipe-detail="${escapeAttr(recipe._id)}">
-      <button class="secondary desktop-recipe-detail-back" id="desktop-recipe-detail-back" type="button">
-        <i class="ti ti-arrow-left" aria-hidden="true"></i>
-        <span>${escapeHtml(cookbookName)}</span>
-      </button>
-
-      <article class="desktop-recipe-detail-content">
-        <header class="desktop-recipe-detail-header">
-          <div class="desktop-recipe-detail-heading">
-            <p class="desktop-cookbook-eyebrow">${escapeHtml(cookbookName)}</p>
-            <div class="desktop-recipe-detail-title-row">
-              <h2>${escapeHtml(recipe.name)}</h2>
-              ${recipe.favorite ? '<span class="desktop-recipe-detail-favorite" title="Favorite recipe" aria-label="Favorite recipe"><i class="ti ti-heart-filled"></i></span>' : ''}
-            </div>
-            <div class="desktop-recipe-detail-badges">
-              ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
-              ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
-              ${recipe.difficulty ? `<span class="badge">${escapeHtml(recipe.difficulty)}</span>` : ''}
-            </div>
-          </div>
-          ${mobileRecipeActionMenu(recipe, { desktop: true })}
-        </header>
-
-        <div class="desktop-recipe-detail-stats" aria-label="Recipe timing and rating">
-          <div><span>Prep</span><strong>${escapeHtml(formatDurationMinutes(recipe.prepTime || 0))}</strong></div>
-          <div><span>Cook</span><strong>${escapeHtml(formatDurationMinutes(recipe.cookTime || 0))}</strong></div>
-          <div><span>Rating</span><strong>${starRating(recipe.rating || 0)}</strong></div>
-          ${recipe.originalScan ? `<button class="secondary desktop-recipe-view-scan" type="button" data-view-recipe-scan="${escapeAttr(recipe._id)}"><i class="ti ti-photo"></i>View Scan</button>` : ''}
-        </div>
-
-        ${tags.length ? `<div class="desktop-recipe-detail-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
-
-        <div class="desktop-recipe-detail-sections">
-          <section class="desktop-recipe-detail-section">
-            <h3>Ingredients</h3>
-            ${ingredients.length ? `
-              <ul class="desktop-recipe-ingredient-list">
-                ${ingredients.map(ingredient => `<li>${escapeHtml(formatRecipeIngredient(ingredient))}</li>`).join('')}
-              </ul>
-            ` : '<p class="muted">No ingredients listed.</p>'}
-          </section>
-
-          <section class="desktop-recipe-detail-section">
-            <h3>Instructions</h3>
-            ${instructions ? `<div class="desktop-recipe-instructions">${escapeHtml(instructions).replace(/\n/g, '<br>')}</div>` : '<p class="muted">No instructions listed.</p>'}
-          </section>
-        </div>
-      </article>
-    </section>
   `;
 }
 
@@ -1649,6 +1386,15 @@ function closeMobileRecipeActionMenus() {
 }
 
 function bindMobileRecipeActionItems(root) {
+  root.querySelectorAll('[data-edit-mobile-recipe]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.editMobileRecipe));
+      closeMobileRecipeActionMenus();
+      if (recipe) openRecipeEditModal(recipe);
+    });
+  });
+
   root.querySelectorAll('[data-view-recipe-scan]').forEach(button => {
     button.addEventListener('click', event => {
       event.stopPropagation();
@@ -1673,19 +1419,6 @@ function bindMobileRecipeActionItems(root) {
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.addRecipeTags));
       closeMobileRecipeActionMenus();
       if (recipe) openRecipeTagsModal(recipe);
-    });
-  });
-
-  root.querySelectorAll('[data-edit-desktop-recipe]').forEach(button => {
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.editDesktopRecipe));
-      closeMobileRecipeActionMenus();
-      if (!recipe) return;
-      const cookbookId = state.desktopRecipeCookbookId && state.desktopRecipeCookbookId !== 'all'
-        ? state.desktopRecipeCookbookId
-        : '';
-      openDesktopRecipeModal({ cookbookId, recipe });
     });
   });
 
@@ -1747,8 +1480,8 @@ function bindRecipeListActions(root = pageRoot) {
 
       state.openMobileRecipeMenuId = recipeId;
       button.setAttribute('aria-expanded', 'true');
-      const isDesktopMenu = button.dataset.recipeMenuContext === 'desktop';
-      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe, { includeScan: isDesktopMenu, includeEdit: isDesktopMenu }));
+      const includeEdit = Boolean(button.closest('.mobile-recipe-detail-menu-wrap'));
+      button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe, { includeEdit }));
       bindMobileRecipeActionItems(button.parentElement);
     });
   });
@@ -1809,7 +1542,6 @@ function openDeleteRecipeConfirmation(recipe) {
       await api(`/api/recipes/${recipe._id}`, { method: 'DELETE' });
       state.openMobileRecipeMenuId = '';
       if (String(state.mobileRecipeDetailId) === String(recipe._id)) state.mobileRecipeDetailId = '';
-      if (String(state.desktopRecipeDetailId) === String(recipe._id)) state.desktopRecipeDetailId = '';
       await Promise.all([loadRecipes(), loadCookbooks(), loadPlanner(), loadStats()]);
       overlay.remove();
       document.body.classList.remove('modal-open');
@@ -1827,6 +1559,112 @@ function openDeleteRecipeConfirmation(recipe) {
   document.body.classList.add('modal-open');
   requestAnimationFrame(() => overlay.classList.add('open'));
   overlay.querySelector('[data-confirm-recipe-delete]')?.focus();
+}
+
+function openRecipeEditModal(recipe) {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.recipe-edit-overlay')?.remove();
+
+  const prepTime = Math.max(0, Math.round(Number(recipe.prepTime) || 0));
+  const prepHours = String(Math.floor(prepTime / 60)).padStart(2, '0');
+  const prepMinutes = String(prepTime % 60).padStart(2, '0');
+  const ingredientsText = (recipe.ingredients || [])
+    .map(ingredient => [
+      ingredient.quantity || '',
+      ingredient.unit || '',
+      ingredient.name || '',
+      ingredient.category || 'Other'
+    ].join(' | '))
+    .join('\n');
+
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-import-overlay recipe-edit-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-import-modal recipe-edit-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-edit-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-edit-title">Edit Recipe</h3>
+          <p class="muted">Update the recipe details below.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-edit aria-label="Close recipe editor">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="recipe-edit-form" class="calendar-meal-form recipe-import-form">
+            <div class="form-grid compact-form-grid">
+              <label>Name<input name="name" required value="${escapeAttr(recipe.name || '')}" /></label>
+              <label>Cuisine<input name="cuisine" value="${escapeAttr(recipe.cuisine || '')}" placeholder="American, Mexican, Italian" /></label>
+              <label>Meal Types<input name="mealTypes" value="${escapeAttr((recipe.mealTypes || []).join(', '))}" placeholder="dinner, lunch" /></label>
+              <label>Tags<input name="tags" value="${escapeAttr((recipe.tags || []).join(', '))}" placeholder="quick, cheap, healthy" /></label>
+              <label>Prep Time
+                <span class="duration-clock" aria-label="Prep time duration">
+                  <input name="editPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepHours)}" aria-label="Prep time hours" />
+                  <span class="duration-separator" aria-hidden="true">:</span>
+                  <input name="editPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepMinutes)}" aria-label="Prep time minutes" />
+                </span>
+              </label>
+              <label>Cook Time<input name="cookTime" type="number" min="0" value="${escapeAttr(recipe.cookTime || 0)}" /></label>
+              <label>Difficulty
+                <select name="difficulty">
+                  ${option('easy', 'Easy', recipe.difficulty || 'easy')}
+                  ${option('medium', 'Medium', recipe.difficulty || 'easy')}
+                  ${option('hard', 'Hard', recipe.difficulty || 'easy')}
+                </select>
+              </label>
+              <label>Rating<select name="rating">${recipeRatingOptions(recipe.rating || 3)}</select></label>
+              <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" rows="9">${escapeHtml(ingredientsText)}</textarea></label>
+              <label class="wide">Instructions<textarea name="instructions">${escapeHtml(recipe.instructions || '')}</textarea></label>
+              <label class="wide checkbox-line"><input type="checkbox" name="favorite" ${recipe.favorite ? 'checked' : ''} /> Favorite</label>
+            </div>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-recipe-edit>Cancel</button>
+              <button class="primary" type="submit">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+
+  const close = () => {
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+
+  overlay.querySelectorAll('[data-close-recipe-edit]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  overlay.querySelector('#recipe-edit-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = formToBody(formElement);
+      body.prepTime = durationInputsToMinutes(formElement, 'editPrep');
+      delete body.editPrepHours;
+      delete body.editPrepMinutes;
+      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      body.originalScan = recipe.originalScan || '';
+      body.originalScanName = recipe.originalScanName || '';
+      body.importSource = recipe.importSource || '';
+      body.importNotes = recipe.importNotes || '';
+
+      await api(`/api/recipes/${recipe._id}`, { method: 'PUT', body });
+      await loadRecipes();
+      state.openMobileRecipeMenuId = '';
+      renderRecipes();
+      close();
+    }, 'Recipe updated.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.querySelector('input[name="name"]')?.focus();
 }
 
 function openRecipeTagsModal(recipe) {
@@ -1891,453 +1729,6 @@ function openRecipeTagsModal(recipe) {
   requestAnimationFrame(() => overlay.classList.add('open'));
   overlay.querySelector('input[name="tags"]')?.focus();
 }
-function sortedRecipeCookbooks() {
-  return [...state.cookbooks].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
-}
-
-function desktopCookbookRecipes(cookbookId) {
-  if (String(cookbookId) === 'all') return [...state.recipes];
-  const cookbook = state.cookbooks.find(item => String(item._id) === String(cookbookId));
-  if (!cookbook) return [];
-  const recipeIds = new Set((cookbook.recipeIds || []).map(String));
-  return state.recipes.filter(recipe => recipeIds.has(String(recipe._id)));
-}
-
-function desktopCookbookCard(cookbook, { system = false } = {}) {
-  const cookbookId = system ? 'all' : String(cookbook._id);
-  const recipes = system ? state.recipes : desktopCookbookRecipes(cookbookId);
-  const previewNames = recipes
-    .slice()
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-    .slice(0, 3)
-    .map(recipe => recipe.name);
-  return `
-    <button class="desktop-cookbook-card" type="button" data-open-desktop-cookbook="${escapeAttr(cookbookId)}" aria-label="Open ${escapeAttr(cookbook.name)} cookbook">
-      <span class="desktop-cookbook-card-icon"><i class="ti ${system ? 'ti-books' : 'ti-book-2'}" aria-hidden="true"></i></span>
-      <span class="desktop-cookbook-card-copy">
-        <strong>${escapeHtml(cookbook.name)}</strong>
-        <small>${recipes.length} recipe${recipes.length === 1 ? '' : 's'}</small>
-        <span class="desktop-cookbook-preview${previewNames.length ? '' : ' muted'}">${previewNames.length ? previewNames.map(escapeHtml).join(' · ') : 'No recipes added yet.'}</span>
-      </span>
-      <i class="ti ti-chevron-right desktop-cookbook-card-arrow" aria-hidden="true"></i>
-    </button>
-  `;
-}
-
-function desktopCookbookIndex() {
-  const cookbooks = sortedRecipeCookbooks();
-  return `
-    <section class="desktop-recipes-index" aria-label="Recipe cookbooks">
-      <div class="desktop-recipes-primary-action">
-        <button class="primary" id="desktop-open-add-recipe" type="button"><i class="ti ti-plus"></i>Add Recipe</button>
-      </div>
-      <div class="desktop-cookbook-grid">
-        <button class="desktop-cookbook-card desktop-cookbook-add-card" id="desktop-add-cookbook" type="button">
-          <span class="desktop-cookbook-add-icon"><i class="ti ti-plus" aria-hidden="true"></i></span>
-          <span>
-            <strong>Add Cookbook</strong>
-            <small>Create a new recipe collection</small>
-          </span>
-        </button>
-        ${desktopCookbookCard({ name: 'All Recipes' }, { system: true })}
-        ${cookbooks.map(cookbook => desktopCookbookCard(cookbook)).join('')}
-      </div>
-    </section>
-  `;
-}
-
-function desktopCookbookDetail(cookbookId) {
-  const isAllRecipes = String(cookbookId) === 'all';
-  const cookbook = isAllRecipes
-    ? { _id: 'all', name: 'All Recipes', recipeIds: state.recipes.map(recipe => recipe._id) }
-    : state.cookbooks.find(item => String(item._id) === String(cookbookId));
-
-  if (!cookbook) {
-    state.desktopRecipeCookbookId = '';
-    return desktopCookbookIndex();
-  }
-
-  const recipes = desktopCookbookRecipes(cookbook._id)
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
-  const activeRecipe = state.desktopRecipeDetailId
-    ? recipes.find(recipe => String(recipe._id) === String(state.desktopRecipeDetailId))
-    : null;
-  if (state.desktopRecipeDetailId && !activeRecipe) state.desktopRecipeDetailId = '';
-  if (activeRecipe) return desktopRecipeDetailPage(activeRecipe, cookbook);
-
-  return `
-    <section class="desktop-cookbook-detail" data-desktop-cookbook-detail="${escapeAttr(cookbook._id)}">
-      <button class="secondary desktop-cookbook-back" id="desktop-cookbook-back" type="button"><i class="ti ti-arrow-left"></i>Cookbooks</button>
-      <header class="desktop-cookbook-detail-header">
-        <div>
-          <p class="desktop-cookbook-eyebrow">Cookbook</p>
-          <h2>${escapeHtml(cookbook.name)}</h2>
-          <p class="muted">${recipes.length} recipe${recipes.length === 1 ? '' : 's'}</p>
-        </div>
-        <div class="desktop-cookbook-detail-actions">
-          <button class="primary" id="desktop-add-recipe-to-cookbook" type="button"><i class="ti ti-plus"></i>Add Recipe</button>
-          ${isAllRecipes ? '' : `
-            <button class="secondary" id="desktop-edit-cookbook-name" type="button"><i class="ti ti-pencil"></i>Edit Name</button>
-            <button class="secondary" id="desktop-edit-cookbook-recipes" type="button"><i class="ti ti-list-check"></i>Edit Recipes</button>
-          `}
-        </div>
-      </header>
-      <div class="desktop-recipe-library-meta">${escapeHtml(cookbook.name)} · ${recipes.length} recipe${recipes.length === 1 ? '' : 's'}</div>
-      <div class="desktop-recipe-grid desktop-cookbook-recipe-grid">
-        ${recipes.length ? recipes.map(desktopRecipeCard).join('') : '<div class="empty desktop-recipe-empty">This cookbook is empty. Add a new recipe or use Edit Recipes to add saved recipes.</div>'}
-      </div>
-    </section>
-  `;
-}
-
-function closeDesktopRecipeOverlay(overlay) {
-  if (!overlay) return;
-  overlay.classList.remove('open');
-  overlay.classList.add('closing');
-  window.setTimeout(() => {
-    overlay.remove();
-    if (!document.querySelector('.time-modal-overlay.open')) document.body.classList.remove('modal-open');
-  }, 180);
-}
-
-async function addRecipeToCookbook(cookbookId, recipeId) {
-  if (!cookbookId || String(cookbookId) === 'all') return;
-  const cookbook = state.cookbooks.find(item => String(item._id) === String(cookbookId));
-  if (!cookbook) return;
-  const recipeIds = [...new Set([...(cookbook.recipeIds || []).map(String), String(recipeId)])];
-  await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { recipeIds } });
-}
-
-function recipeIngredientsToEditableText(recipe) {
-  return (recipe?.ingredients || [])
-    .map(ingredient => [ingredient?.quantity, ingredient?.unit, ingredient?.name, ingredient?.category]
-      .map(value => String(value || '').trim())
-      .join(' | ')
-      .replace(/(?:\s*\|\s*)+$/g, '')
-      .trim())
-    .filter(Boolean)
-    .join('\n');
-}
-
-function openDesktopRecipeModal({ cookbookId = '', recipe = null } = {}) {
-  closeMobileWebSidebarForModal();
-  document.querySelector('.desktop-recipe-editor-overlay')?.remove();
-  const isEditing = Boolean(recipe?._id);
-  const cookbooks = sortedRecipeCookbooks();
-  const selectedCookbookId = cookbooks.some(cookbook => String(cookbook._id) === String(cookbookId)) ? String(cookbookId) : '';
-  const prepTime = Math.max(0, Number(recipe?.prepTime) || 0);
-  const prepHours = String(Math.floor(prepTime / 60)).padStart(2, '0');
-  const prepMinutes = String(prepTime % 60).padStart(2, '0');
-
-  const overlay = document.createElement('section');
-  overlay.className = 'time-modal-overlay desktop-recipe-editor-overlay';
-  overlay.innerHTML = `
-    <article class="time-modal-card desktop-recipe-editor-card" role="dialog" aria-modal="true" aria-labelledby="desktop-recipe-editor-title">
-      <header class="time-modal-header">
-        <div>
-          <h3 id="desktop-recipe-editor-title">${isEditing ? 'Edit Recipe' : 'Add Recipe'}</h3>
-          <p class="muted">${isEditing ? 'Update this saved recipe.' : 'Create a recipe manually or switch this window to the recipe importer.'}</p>
-        </div>
-        <button class="secondary modal-close-btn" type="button" data-close-desktop-recipe-editor aria-label="Close ${isEditing ? 'edit' : 'add'} recipe">×</button>
-      </header>
-      <div class="time-modal-body">
-        <div class="time-modal-body-inner">
-          ${isEditing ? '' : `
-            <div class="desktop-recipe-modal-switch-row">
-              <button class="secondary" id="desktop-switch-to-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
-            </div>
-          `}
-          <form id="desktop-recipe-form" class="calendar-meal-form desktop-recipe-form">
-            <div class="form-grid">
-              <label>Name<input name="name" required placeholder="Smoked paprika chicken" value="${escapeAttr(recipe?.name || '')}" /></label>
-              <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" value="${escapeAttr(recipe?.cuisine || '')}" /></label>
-              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="${escapeAttr((recipe?.mealTypes || []).join(', '))}" /></label>
-              <label>Tags<input name="tags" placeholder="quick, cheap, healthy" value="${escapeAttr((recipe?.tags || []).join(', '))}" /></label>
-              <label>Prep Time
-                <span class="duration-clock" aria-label="Prep time duration">
-                  <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepHours)}" aria-label="Prep time hours" />
-                  <span class="duration-separator" aria-hidden="true">:</span>
-                  <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepMinutes)}" aria-label="Prep time minutes" />
-                </span>
-              </label>
-              <label>Cook Time<input name="cookTime" type="number" min="0" value="${escapeAttr(recipe?.cookTime ?? 25)}" /></label>
-              <label>Difficulty<select name="difficulty"><option value="easy" ${String(recipe?.difficulty || 'easy').toLowerCase() === 'easy' ? 'selected' : ''}>Easy</option><option value="medium" ${String(recipe?.difficulty || '').toLowerCase() === 'medium' ? 'selected' : ''}>Medium</option><option value="hard" ${String(recipe?.difficulty || '').toLowerCase() === 'hard' ? 'selected' : ''}>Hard</option></select></label>
-              <label>Rating<select name="rating">${recipeRatingOptions(recipe?.rating || 3)}</select></label>
-              <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry">${escapeHtml(recipeIngredientsToEditableText(recipe))}</textarea></label>
-              <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps">${escapeHtml(recipe?.instructions || '')}</textarea></label>
-              <label class="wide">Cookbook
-                <select name="cookbookId">
-                  <option value="">No custom cookbook</option>
-                  ${cookbooks.map(cookbook => `<option value="${escapeAttr(cookbook._id)}" ${String(cookbook._id) === selectedCookbookId ? 'selected' : ''}>${escapeHtml(cookbook.name)}</option>`).join('')}
-                </select>
-              </label>
-              <label class="wide checkbox-line"><input type="checkbox" name="favorite" ${recipe?.favorite ? 'checked' : ''} /> Favorite</label>
-            </div>
-            <div class="modal-actions action-row desktop-recipe-editor-actions">
-              <button class="secondary" type="button" data-close-desktop-recipe-editor>Cancel</button>
-              <button class="primary" type="submit">${isEditing ? 'Save Changes' : 'Save Recipe'}</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </article>
-  `;
-
-  const close = () => closeDesktopRecipeOverlay(overlay);
-  overlay.querySelectorAll('[data-close-desktop-recipe-editor]').forEach(button => button.addEventListener('click', close));
-  overlay.addEventListener('click', event => {
-    if (event.target === overlay) close();
-  });
-  overlay.addEventListener('keydown', event => {
-    if (event.key === 'Escape') close();
-  });
-  overlay.querySelector('#desktop-switch-to-import')?.addEventListener('click', () => openRecipeImportModal(overlay));
-  overlay.querySelector('#desktop-recipe-form')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    await withSaveFeedback(formElement, async () => {
-      const body = formToBody(formElement);
-      const targetCookbookId = String(body.cookbookId || '');
-      delete body.cookbookId;
-      body.prepTime = durationInputsToMinutes(formElement, 'prep');
-      delete body.prepHours;
-      delete body.prepMinutes;
-      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
-      if (isEditing) {
-        body.originalScan = recipe.originalScan || '';
-        body.originalScanName = recipe.originalScanName || '';
-        body.importSource = recipe.importSource || '';
-        body.importNotes = recipe.importNotes || '';
-        body.ocrText = recipe.ocrText || '';
-        body.aiCleaned = Boolean(recipe.aiCleaned);
-        body.aiModel = recipe.aiModel || '';
-        body.aiConfidence = Number(recipe.aiConfidence) || 0;
-        body.aiWarnings = recipe.aiWarnings || [];
-        body.aiUnclearFields = recipe.aiUnclearFields || [];
-      }
-      const savedRecipe = await api(isEditing ? `/api/recipes/${recipe._id}` : '/api/recipes', { method: isEditing ? 'PUT' : 'POST', body });
-      await addRecipeToCookbook(targetCookbookId, savedRecipe._id);
-      await Promise.all([loadRecipes(), loadCookbooks(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
-      close();
-      renderRecipes();
-    }, isEditing ? 'Recipe updated.' : 'Recipe saved.');
-  });
-
-  document.body.appendChild(overlay);
-  document.body.classList.add('modal-open');
-  requestAnimationFrame(() => overlay.classList.add('open'));
-  overlay.querySelector('input[name="name"]')?.focus();
-}
-
-function openDesktopCreateCookbookModal() {
-  closeMobileWebSidebarForModal();
-  document.querySelector('.desktop-cookbook-create-overlay')?.remove();
-  const overlay = document.createElement('section');
-  overlay.className = 'time-modal-overlay desktop-cookbook-create-overlay';
-  overlay.innerHTML = `
-    <article class="time-modal-card desktop-cookbook-edit-card" role="dialog" aria-modal="true" aria-labelledby="desktop-cookbook-create-title">
-      <header class="time-modal-header">
-        <div>
-          <h3 id="desktop-cookbook-create-title">Add Cookbook</h3>
-          <p class="muted">Create a custom collection for your recipes.</p>
-        </div>
-        <button class="secondary modal-close-btn" type="button" data-close-desktop-cookbook-create aria-label="Close add cookbook">×</button>
-      </header>
-      <div class="time-modal-body">
-        <div class="time-modal-body-inner">
-          <form id="desktop-cookbook-create-form">
-            <label>Cookbook Name<input name="name" maxlength="80" required placeholder="Weeknight Favorites" /></label>
-            <div class="modal-actions action-row">
-              <button class="secondary" type="button" data-close-desktop-cookbook-create>Cancel</button>
-              <button class="primary" type="submit">Add Cookbook</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </article>
-  `;
-  const close = () => closeDesktopRecipeOverlay(overlay);
-  overlay.querySelectorAll('[data-close-desktop-cookbook-create]').forEach(button => button.addEventListener('click', close));
-  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
-  overlay.querySelector('#desktop-cookbook-create-form')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    await withSaveFeedback(form, async () => {
-      const name = String(new FormData(form).get('name') || '').trim();
-      const cookbook = await api('/api/cookbooks', { method: 'POST', body: { name } });
-      await loadCookbooks();
-      state.desktopRecipeCookbookId = String(cookbook._id);
-      close();
-      renderRecipes();
-    }, 'Cookbook created.');
-  });
-  document.body.appendChild(overlay);
-  document.body.classList.add('modal-open');
-  requestAnimationFrame(() => overlay.classList.add('open'));
-  overlay.querySelector('input[name="name"]')?.focus();
-}
-
-function openDesktopEditCookbookNameModal(cookbook) {
-  if (!cookbook) return;
-  document.querySelector('.desktop-cookbook-name-overlay')?.remove();
-  const overlay = document.createElement('section');
-  overlay.className = 'time-modal-overlay desktop-cookbook-name-overlay';
-  overlay.innerHTML = `
-    <article class="time-modal-card desktop-cookbook-edit-card" role="dialog" aria-modal="true" aria-labelledby="desktop-cookbook-name-title">
-      <header class="time-modal-header">
-        <div>
-          <h3 id="desktop-cookbook-name-title">Edit Cookbook Name</h3>
-          <p class="muted">Rename this cookbook without changing its recipes.</p>
-        </div>
-        <button class="secondary modal-close-btn" type="button" data-close-desktop-cookbook-name aria-label="Close cookbook name editor">×</button>
-      </header>
-      <div class="time-modal-body">
-        <div class="time-modal-body-inner">
-          <form id="desktop-cookbook-name-form">
-            <label>Cookbook Name<input name="name" maxlength="80" required value="${escapeAttr(cookbook.name)}" /></label>
-            <div class="modal-actions action-row">
-              <button class="secondary" type="button" data-close-desktop-cookbook-name>Cancel</button>
-              <button class="primary" type="submit">Save Name</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </article>
-  `;
-  const close = () => closeDesktopRecipeOverlay(overlay);
-  overlay.querySelectorAll('[data-close-desktop-cookbook-name]').forEach(button => button.addEventListener('click', close));
-  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
-  overlay.querySelector('#desktop-cookbook-name-form')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    await withSaveFeedback(form, async () => {
-      const name = String(new FormData(form).get('name') || '').trim();
-      await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { name } });
-      await loadCookbooks();
-      close();
-      renderRecipes();
-    }, 'Cookbook renamed.');
-  });
-  document.body.appendChild(overlay);
-  document.body.classList.add('modal-open');
-  requestAnimationFrame(() => overlay.classList.add('open'));
-  const input = overlay.querySelector('input[name="name"]');
-  input?.focus();
-  input?.select();
-}
-
-function openDesktopEditCookbookRecipesModal(cookbook) {
-  if (!cookbook) return;
-  document.querySelector('.desktop-cookbook-recipes-overlay')?.remove();
-  const selectedRecipeIds = new Set((cookbook.recipeIds || []).map(String));
-  const recipes = [...state.recipes].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
-  const overlay = document.createElement('section');
-  overlay.className = 'time-modal-overlay desktop-cookbook-recipes-overlay';
-  overlay.innerHTML = `
-    <article class="time-modal-card desktop-cookbook-recipes-card" role="dialog" aria-modal="true" aria-labelledby="desktop-cookbook-recipes-title">
-      <header class="time-modal-header">
-        <div>
-          <h3 id="desktop-cookbook-recipes-title">Edit Recipes</h3>
-          <p class="muted">Choose which saved recipes belong in ${escapeHtml(cookbook.name)}.</p>
-        </div>
-        <button class="secondary modal-close-btn" type="button" data-close-desktop-cookbook-recipes aria-label="Close recipe editor">×</button>
-      </header>
-      <div class="time-modal-body">
-        <div class="time-modal-body-inner">
-          <form id="desktop-cookbook-recipes-form">
-            <div class="desktop-cookbook-recipe-picker">
-              ${recipes.length ? recipes.map(recipe => `
-                <label class="desktop-cookbook-recipe-option">
-                  <input type="checkbox" name="recipeIds" value="${escapeAttr(recipe._id)}" ${selectedRecipeIds.has(String(recipe._id)) ? 'checked' : ''} />
-                  <span>
-                    <strong>${escapeHtml(recipe.name)}</strong>
-                    <small>${escapeHtml((recipe.mealTypes || [])[0] ? titleCase(recipe.mealTypes[0]) : 'Recipe')}${recipe.cuisine ? ` · ${escapeHtml(recipe.cuisine)}` : ''}</small>
-                  </span>
-                </label>
-              `).join('') : '<div class="empty">No saved recipes yet. Add a recipe first.</div>'}
-            </div>
-            <div class="modal-actions action-row">
-              <button class="secondary" type="button" data-close-desktop-cookbook-recipes>Cancel</button>
-              <button class="primary" type="submit">Save Recipes</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </article>
-  `;
-  const close = () => closeDesktopRecipeOverlay(overlay);
-  overlay.querySelectorAll('[data-close-desktop-cookbook-recipes]').forEach(button => button.addEventListener('click', close));
-  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
-  overlay.querySelector('#desktop-cookbook-recipes-form')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    await withSaveFeedback(form, async () => {
-      const recipeIds = new FormData(form).getAll('recipeIds').map(String);
-      await api(`/api/cookbooks/${cookbook._id}`, { method: 'PUT', body: { recipeIds } });
-      await loadCookbooks();
-      close();
-      renderRecipes();
-    }, 'Cookbook recipes updated.');
-  });
-  document.body.appendChild(overlay);
-  document.body.classList.add('modal-open');
-  requestAnimationFrame(() => overlay.classList.add('open'));
-}
-
-function bindDesktopRecipePage() {
-  $('#desktop-open-add-recipe')?.addEventListener('click', () => openDesktopRecipeModal());
-  $('#desktop-add-cookbook')?.addEventListener('click', openDesktopCreateCookbookModal);
-  document.querySelectorAll('[data-open-desktop-cookbook]').forEach(button => {
-    button.addEventListener('click', () => {
-      state.desktopRecipeCookbookId = String(button.dataset.openDesktopCookbook || '');
-      state.desktopRecipeDetailId = '';
-      state.openMobileRecipeMenuId = '';
-      renderRecipes();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  });
-
-  $('#desktop-cookbook-back')?.addEventListener('click', () => {
-    state.desktopRecipeCookbookId = '';
-    state.desktopRecipeDetailId = '';
-    state.openMobileRecipeMenuId = '';
-    renderRecipes();
-  });
-
-  $('#desktop-recipe-detail-back')?.addEventListener('click', () => {
-    state.desktopRecipeDetailId = '';
-    state.openMobileRecipeMenuId = '';
-    renderRecipes();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
-
-  document.querySelectorAll('[data-open-desktop-recipe]').forEach(card => {
-    card.addEventListener('click', event => {
-      if (event.target.closest('button, a, input, select, textarea, .mobile-recipe-action-menu')) return;
-      state.desktopRecipeDetailId = String(card.dataset.openDesktopRecipe || '');
-      state.openMobileRecipeMenuId = '';
-      renderRecipes();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-    card.addEventListener('keydown', event => {
-      if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
-      event.preventDefault();
-      state.desktopRecipeDetailId = String(card.dataset.openDesktopRecipe || '');
-      state.openMobileRecipeMenuId = '';
-      renderRecipes();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  });
-
-  const activeCookbook = state.cookbooks.find(cookbook => String(cookbook._id) === String(state.desktopRecipeCookbookId));
-  $('#desktop-add-recipe-to-cookbook')?.addEventListener('click', () => openDesktopRecipeModal({ cookbookId: activeCookbook?._id || '' }));
-  $('#desktop-edit-cookbook-name')?.addEventListener('click', () => openDesktopEditCookbookNameModal(activeCookbook));
-  $('#desktop-edit-cookbook-recipes')?.addEventListener('click', () => openDesktopEditCookbookRecipesModal(activeCookbook));
-}
-
 function renderRecipes() {
   const visibleMobileRecipes = getVisibleMobileRecipes();
   let mobileRecipeDetail = state.mobileRecipeDetailId
@@ -2349,8 +1740,38 @@ function renderRecipes() {
   }
   updateRecipeMobileToolbarVisibility();
   pageRoot.innerHTML = `
-    <section class="recipes-desktop-layout">
-      ${state.desktopRecipeCookbookId ? desktopCookbookDetail(state.desktopRecipeCookbookId) : desktopCookbookIndex()}
+    <section class="recipes-desktop-layout grid two">
+      <form id="recipe-form" class="form-card">
+        <div class="form-heading-row">
+          <h3>Add Recipe</h3>
+          <button class="secondary small-btn" id="open-recipe-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
+        </div>
+        <div class="form-grid">
+          <label>Name<input name="name" required placeholder="Smoked paprika chicken" /></label>
+          <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
+          <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
+          <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
+          <label>Prep Time
+            <span class="duration-clock" aria-label="Prep time duration">
+              <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+              <span class="duration-separator" aria-hidden="true">:</span>
+              <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+            </span>
+          </label>
+          <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+          <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+          <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
+          <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
+          <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
+          <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+        </div>
+        <button class="primary full" type="submit">Save Recipe</button>
+      </form>
+      <article class="card">
+        <h3>Recipe Library</h3>
+        <p class="muted">${state.recipes.length} saved recipe${state.recipes.length === 1 ? '' : 's'}.</p>
+        <div class="list">${state.recipes.length ? state.recipes.map(recipeItem).join('') : '<div class="empty">Add your first recipe to start planning meals.</div>'}</div>
+      </article>
     </section>
 
     <section class="recipes-mobile-layout" aria-label="${mobileRecipeDetail ? 'Recipe details' : 'Recipe cookbooks'}">
@@ -2386,6 +1807,7 @@ function renderRecipes() {
 
   if (!mobileRecipeDetail) syncRecipeCookbookToolbar();
   $('#mobile-recipe-detail-back')?.addEventListener('click', closeMobileRecipeDetail);
+  $('#open-recipe-import')?.addEventListener('click', openRecipeImportModal);
   $('#mobile-open-recipe-import')?.addEventListener('click', openRecipeImportModal);
 
   $('#mobile-recipe-search')?.addEventListener('input', event => {
@@ -2399,7 +1821,22 @@ function renderRecipes() {
     renderMobileRecipeResults();
   });
 
-  bindDesktopRecipePage();
+  $('#recipe-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    await withSaveFeedback(formElement, async () => {
+      const body = formToBody(formElement);
+      body.prepTime = durationInputsToMinutes(formElement, 'prep');
+      delete body.prepHours;
+      delete body.prepMinutes;
+      body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      await api('/api/recipes', { method: 'POST', body });
+      formElement.reset();
+      await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
+      renderRecipes();
+    }, 'Recipe saved.');
+  });
+
   bindRecipeListActions(pageRoot);
 }
 
@@ -2650,85 +2087,102 @@ function openRecipeCookbookAssignment(recipe) {
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
 
-function openRecipeImportModal(existingOverlay = null) {
+function openRecipeImportModal() {
   closeMobileWebSidebarForModal();
   recipeImportScan = { dataUrl: '', name: '', type: '' };
+  recipeImportSourceType = 'printed';
+  recipeImportSourceUrl = '';
   recipeImportAiMeta = null;
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
-  const reuseOverlay = Boolean(existingOverlay?.isConnected);
-  if (!reuseOverlay) document.querySelector('.recipe-import-overlay')?.remove();
+  document.querySelector('.recipe-import-overlay')?.remove();
   document.body.classList.add('modal-open');
 
-  const overlay = reuseOverlay ? existingOverlay : document.createElement('section');
+  const overlay = document.createElement('section');
   overlay.className = 'time-modal-overlay recipe-import-overlay';
-  if (reuseOverlay) overlay.classList.add('open');
   overlay.innerHTML = `
     <article class="time-modal-card recipe-import-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-import-title">
       <header class="time-modal-header">
         <div>
-          <h3 id="recipe-import-title">Import Printed Recipe</h3>
-          <p class="muted">Upload or take a photo to extract the recipe text automatically, then use AI to create an editable draft.</p>
+          <h3 id="recipe-import-title">Import Recipe</h3>
+          <p class="muted">Paste a recipe URL, upload a file, or take a photo to create an editable draft.</p>
         </div>
-        <button class="secondary modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
+        <button class="small-btn modal-close-btn" type="button" data-close-recipe-import aria-label="Close import modal">×</button>
       </header>
       <div class="time-modal-body">
         <div class="time-modal-body-inner">
-          <form id="recipe-import-form" class="calendar-meal-form recipe-import-form">
-            <div class="recipe-import-upload">
-              <div class="recipe-import-source-picker">
-                <span class="recipe-import-source-label">Recipe Photo or PDF</span>
-                <div class="recipe-import-source-actions">
-                  <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
-                  <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
+          <form id="recipe-import-form" class="calendar-meal-form recipe-import-form" autocomplete="off">
+            <div class="recipe-import-upload" id="recipe-import-options">
+              <div class="recipe-import-url-card">
+                <div class="recipe-import-url-card-header">
+                  <div>
+                    <span class="recipe-import-source-label">Recipe Source</span>
+                    <span id="recipe-import-options-summary">URL, photo, or PDF</span>
+                  </div>
+                  <button class="secondary recipe-import-options-toggle" id="recipe-import-options-toggle" type="button" aria-expanded="true" aria-label="Minimize import options" title="Minimize import options">
+                    <i class="ti ti-chevron-up" aria-hidden="true"></i>
+                  </button>
                 </div>
-                <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
-                <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
-                <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
-              </div>
-              <div id="recipe-import-preview" class="recipe-import-preview empty">No scan selected.</div>
-              <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
-                <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
-                <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+                <div class="recipe-import-options-body">
+                  <div class="recipe-import-source-picker">
+                    <div class="recipe-import-url-row">
+                      <input id="recipe-import-url" name="recipeUrl" type="url" placeholder="https://example.com/recipe" autocomplete="off" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" data-lpignore="true" data-1p-ignore="true" />
+                      <button class="secondary" id="recipe-import-url-button" type="button"><i class="ti ti-link"></i>Import URL</button>
+                    </div>
+                    <p id="recipe-import-url-status" class="muted recipe-import-source-help" aria-live="polite">Paste a recipe link to import it, or use a photo/PDF below.</p>
+                    <span class="recipe-import-source-label">Recipe Photo or PDF</span>
+                    <div class="recipe-import-source-actions recipe-import-inline-buttons">
+                      <button class="secondary" id="recipe-import-camera" type="button"><i class="ti ti-camera"></i>Take Photo</button>
+                      <button class="secondary" id="recipe-import-upload" type="button"><i class="ti ti-photo-up"></i>Choose Photo or PDF</button>
+                    </div>
+                    <p class="muted recipe-import-source-help">Photos are optimized automatically before text extraction.</p>
+                    <input id="recipe-import-camera-file" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+                    <input id="recipe-import-file" class="visually-hidden" name="recipeFile" type="file" accept="image/*,application/pdf" />
+                  </div>
+                  <div id="recipe-import-preview" class="recipe-import-preview empty hidden" aria-live="polite"></div>
+                  <div class="recipe-ocr-controls recipe-import-scan-dependent hidden">
+                    <button class="secondary recipe-ocr-button" id="recipe-import-ocr" type="button" disabled><i class="ti ti-scan"></i>Extract Text From Scan</button>
+                    <p id="recipe-import-ocr-status" class="recipe-ocr-status muted" aria-live="polite">Choose a photo or PDF to extract its text.</p>
+                  </div>
+                </div>
               </div>
             </div>
-            <label class="wide recipe-import-scan-dependent hidden">Extracted or Typed Text <span class="optional">review the extracted text before AI cleanup; nothing saves automatically</span><textarea name="importText" maxlength="15000" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it."></textarea></label>
-            <section class="recipe-ai-callout recipe-import-scan-dependent hidden" aria-labelledby="recipe-ai-title">
-              <div>
-                <strong id="recipe-ai-title"><i class="ti ti-sparkles"></i>AI Recipe Cleanup</strong>
-                <p>Turn messy OCR text into an editable recipe draft. Review every field before saving.</p>
-              </div>
-              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles"></i>Clean Up With AI</button>
-            </section>
+            <div class="recipe-import-text-control recipe-import-scan-dependent hidden">
+              <button class="secondary" id="recipe-import-view-text" type="button"><i class="ti ti-file-text"></i>View Extracted Text</button>
+              <textarea hidden name="importText" maxlength="15000" aria-label="Extracted or typed recipe text" autocomplete="off"></textarea>
+            </div>
+            <div class="recipe-import-ai-action recipe-import-scan-dependent hidden">
+              <button class="primary recipe-ai-button" id="recipe-import-ai" type="button"><i class="ti ti-sparkles" aria-hidden="true"></i><span class="recipe-ai-button-label">Clean with AI</span></button>
+            </div>
             <div id="recipe-import-ai-review" class="recipe-ai-review hidden" aria-live="polite"></div>
             <div class="action-row recipe-import-actions recipe-import-scan-dependent hidden">
-              <button class="secondary" id="recipe-import-parse" type="button"><i class="ti ti-wand"></i>Fill From Text</button>
               <button class="secondary" id="recipe-import-clear-scan" type="button"><i class="ti ti-trash"></i>Clear Scan</button>
             </div>
             <div class="form-grid compact-form-grid recipe-import-fields recipe-import-scan-dependent hidden">
-              <label>Name<input name="name" required placeholder="Grandma's lasagna" /></label>
-              <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" /></label>
-              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" /></label>
-              <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" /></label>
-              <label>Prep Time
-                <span class="duration-clock" aria-label="Prep time duration">
-                  <input name="importPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
-                  <span class="duration-separator" aria-hidden="true">:</span>
-                  <input name="importPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
-                </span>
-              </label>
-              <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+              <label>Name<input name="recipeName" required placeholder="Grandma's lasagna" autocomplete="off" autocapitalize="words" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
+              <label>Cuisine<input name="cuisine" placeholder="Italian, Southern, American" autocomplete="off" autocapitalize="words" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
+              <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" /></label>
+              <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" autocomplete="off" autocapitalize="none" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
+              <div class="recipe-import-time-row wide">
+                <label>Prep Time
+                  <span class="duration-clock" aria-label="Prep time duration">
+                    <input name="importPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
+                    <span class="duration-separator" aria-hidden="true">:</span>
+                    <input name="importPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
+                  </span>
+                </label>
+                <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+              </div>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
-              <label class="wide recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="9" placeholder="One ingredient per line"></textarea></label>
-              <label class="wide">Instructions<textarea name="instructions" placeholder="Recipe steps"></textarea></label>
-              <label class="wide">Import Notes<textarea name="importNotes" placeholder="Binder page, handwritten note, source, servings, temperature, etc."></textarea></label>
+              <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="1" data-recipe-import-autogrow placeholder="One ingredient per line" autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="1" data-recipe-import-autogrow placeholder="Recipe steps" autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
+              <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="1" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc." autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
               <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
             </div>
-            <div class="modal-actions action-row recipe-import-scan-dependent hidden">
+            <div class="modal-actions action-row recipe-import-save-actions recipe-import-save-cancel-row recipe-import-inline-buttons recipe-import-scan-dependent hidden">
+              <button class="primary" type="submit" data-recipe-import-save>Save</button>
               <button class="secondary" type="button" data-close-recipe-import>Cancel</button>
-              <button class="secondary" type="submit" data-recipe-import-save data-save-another="1">Save & Import Another</button>
-              <button class="primary" type="submit" data-recipe-import-save>Save Imported Recipe</button>
             </div>
           </form>
         </div>
@@ -2736,10 +2190,8 @@ function openRecipeImportModal(existingOverlay = null) {
     </article>
   `;
 
-  if (!reuseOverlay) {
-    document.body.appendChild(overlay);
-    requestAnimationFrame(() => overlay.classList.add('open'));
-  }
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
 
   overlay.addEventListener('click', event => {
     if (event.target === overlay) closeRecipeImportModal();
@@ -2750,16 +2202,59 @@ function openRecipeImportModal(existingOverlay = null) {
   overlay.querySelector('#recipe-import-camera-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-file')?.addEventListener('change', handleRecipeImportFile);
   overlay.querySelector('#recipe-import-clear-scan')?.addEventListener('click', clearRecipeImportScan);
+  overlay.querySelector('#recipe-import-options-toggle')?.addEventListener('click', () => {
+    const form = overlay.querySelector('#recipe-import-form');
+    const options = form?.querySelector('#recipe-import-options');
+    setRecipeImportOptionsCollapsed(form, !options?.classList.contains('is-collapsed'));
+  });
+  overlay.querySelector('#recipe-import-view-text')?.addEventListener('click', () => openRecipeImportTextModal(overlay.querySelector('#recipe-import-form')));
+  overlay.querySelector('#recipe-import-url-button')?.addEventListener('click', () => importRecipeFromUrl(overlay.querySelector('#recipe-import-form')));
+  overlay.querySelector('#recipe-import-url')?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      importRecipeFromUrl(overlay.querySelector('#recipe-import-form'));
+    }
+  });
   overlay.querySelector('#recipe-import-ocr')?.addEventListener('click', () => extractRecipeTextFromScan(overlay.querySelector('#recipe-import-form')));
-  overlay.querySelector('#recipe-import-parse')?.addEventListener('click', () => fillRecipeImportFromText(overlay.querySelector('#recipe-import-form')));
   overlay.querySelector('#recipe-import-ai')?.addEventListener('click', () => cleanRecipeImportWithAi(overlay.querySelector('#recipe-import-form')));
-  overlay.querySelector('#recipe-import-form')?.addEventListener('submit', saveImportedRecipe);
+  const importForm = overlay.querySelector('#recipe-import-form');
+  importForm?.addEventListener('submit', saveImportedRecipe);
+  importForm?.querySelector('[data-recipe-import-save]')?.addEventListener('click', () => {
+    const urlInput = importForm.querySelector('#recipe-import-url');
+    if (recipeImportSourceType === 'url' && recipeImportSourceUrl && urlInput) {
+      urlInput.value = recipeImportSourceUrl;
+      urlInput.setCustomValidity('');
+    }
+  });
+  importForm?.querySelectorAll('[data-recipe-import-autogrow]').forEach(textarea => {
+    textarea.addEventListener('input', () => resizeRecipeImportTextarea(textarea));
+    resizeRecipeImportTextarea(textarea);
+  });
+}
+
+function resizeRecipeImportTextarea(textarea) {
+  if (!textarea) return;
+  const computed = window.getComputedStyle(textarea);
+  const minHeight = Number.parseFloat(computed.minHeight) || 44;
+  const maxHeight = Number.parseFloat(computed.maxHeight) || 320;
+  textarea.style.height = 'auto';
+  const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
+  textarea.style.height = `${Math.ceil(nextHeight)}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
+function resizeRecipeImportTextareas(form) {
+  if (!form) return;
+  window.requestAnimationFrame(() => {
+    form.querySelectorAll('[data-recipe-import-autogrow]').forEach(resizeRecipeImportTextarea);
+  });
 }
 
 function closeRecipeImportModal() {
   recipeImportAiMeta = null;
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
+  closeRecipeImportTextModal();
   const overlay = document.querySelector('.recipe-import-overlay');
   if (!overlay) return;
   overlay.classList.remove('open');
@@ -2776,6 +2271,71 @@ function setRecipeImportScanDependentVisibility(form, visible) {
   });
 }
 
+function setRecipeImportOptionsCollapsed(form, collapsed, summary = '') {
+  const options = form?.querySelector?.('#recipe-import-options');
+  const toggle = form?.querySelector?.('#recipe-import-options-toggle');
+  const summaryElement = form?.querySelector?.('#recipe-import-options-summary');
+  if (!options) return;
+
+  const isCollapsed = Boolean(collapsed);
+  options.classList.toggle('is-collapsed', isCollapsed);
+  if (summaryElement) {
+    summaryElement.textContent = summary || (isCollapsed ? 'Recipe source loaded' : 'URL, photo, or PDF');
+  }
+  if (toggle) {
+    const actionLabel = isCollapsed ? 'Expand import options' : 'Minimize import options';
+    toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-label', actionLabel);
+    toggle.setAttribute('title', actionLabel);
+    if (!toggle.querySelector('.ti')) {
+      toggle.innerHTML = '<i class="ti ti-chevron-up" aria-hidden="true"></i>';
+    }
+  }
+}
+
+function closeRecipeImportTextModal() {
+  document.querySelector('.recipe-import-text-overlay')?.remove();
+}
+
+function openRecipeImportTextModal(form) {
+  if (!form) return;
+  closeRecipeImportTextModal();
+
+  const sourceTextarea = form.elements.importText;
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay recipe-import-text-overlay open';
+  overlay.innerHTML = `
+    <article class="time-modal-card recipe-import-text-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-import-text-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="recipe-import-text-title">Extracted Text</h3>
+          <p class="muted">Review or edit the recipe text before filling the fields or cleaning it with AI.</p>
+        </div>
+        <button class="secondary modal-close-btn" type="button" data-close-recipe-import-text aria-label="Close extracted text modal">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner recipe-import-text-body">
+          <textarea id="recipe-import-text-editor" maxlength="15000" aria-label="Extracted recipe text" placeholder="Extracted recipe text will appear here automatically, or you can paste or type it." autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true">${escapeHtml(sourceTextarea?.value || '')}</textarea>
+          <div class="modal-actions">
+            <button class="primary" type="button" data-close-recipe-import-text>Done</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  document.body.appendChild(overlay);
+  const editor = overlay.querySelector('#recipe-import-text-editor');
+  editor?.addEventListener('input', () => {
+    if (sourceTextarea) sourceTextarea.value = editor.value;
+  });
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closeRecipeImportTextModal();
+  });
+  overlay.querySelectorAll('[data-close-recipe-import-text]').forEach(button => button.addEventListener('click', closeRecipeImportTextModal));
+  requestAnimationFrame(() => editor?.focus());
+}
+
 async function handleRecipeImportFile(event) {
   const file = event.currentTarget.files?.[0];
   if (!file) return;
@@ -2784,9 +2344,12 @@ async function handleRecipeImportFile(event) {
   updateRecipeOcrControls(form, { state: 'loading', message: 'Preparing and optimizing the scan…' });
   try {
     recipeImportScan = await recipeSourceFileToDataUrl(file);
+    recipeImportSourceType = 'printed';
+    recipeImportSourceUrl = '';
     setRecipeImportScanDependentVisibility(form, true);
+    setRecipeImportOptionsCollapsed(form, true, recipeImportScan.name || 'Photo or PDF loaded');
     if (preview) {
-      preview.classList.remove('empty');
+      preview.classList.remove('empty', 'hidden');
       preview.innerHTML = recipeImportScan.type.startsWith('image/')
         ? `<img src="${escapeAttr(recipeImportScan.dataUrl)}" alt="Uploaded recipe scan" /><span>${escapeHtml(recipeImportScan.name)}</span>`
         : `<div><i class="ti ti-file-type-pdf"></i><strong>${escapeHtml(recipeImportScan.name)}</strong><p class="muted">PDF scan attached.</p></div>`;
@@ -2798,9 +2361,10 @@ async function handleRecipeImportFile(event) {
   } catch (error) {
     recipeImportScan = { dataUrl: '', name: '', type: '' };
     setRecipeImportScanDependentVisibility(form, false);
+    setRecipeImportOptionsCollapsed(form, false);
     if (preview) {
-      preview.classList.add('empty');
-      preview.textContent = 'No scan selected.';
+      preview.classList.add('empty', 'hidden');
+      preview.textContent = '';
     }
     updateRecipeOcrControls(form, { state: 'error', message: error.message || 'Unable to read recipe scan.' });
     showToast(error.message || 'Unable to read recipe scan.');
@@ -2809,6 +2373,8 @@ async function handleRecipeImportFile(event) {
 
 function clearRecipeImportScan() {
   recipeImportScan = { dataUrl: '', name: '', type: '' };
+  recipeImportSourceType = 'printed';
+  recipeImportSourceUrl = '';
   recipeImportOcrInFlight = false;
   recipeImportOcrRequestId += 1;
   const fileInput = document.querySelector('#recipe-import-file');
@@ -2816,13 +2382,100 @@ function clearRecipeImportScan() {
   const preview = document.querySelector('#recipe-import-preview');
   const form = document.querySelector('#recipe-import-form');
   setRecipeImportScanDependentVisibility(form, false);
+  setRecipeImportOptionsCollapsed(form, false);
+  closeRecipeImportTextModal();
   if (fileInput) fileInput.value = '';
   if (cameraInput) cameraInput.value = '';
   if (preview) {
-    preview.classList.add('empty');
-    preview.textContent = 'No scan selected.';
+    preview.classList.add('empty', 'hidden');
+    preview.textContent = '';
   }
   updateRecipeOcrControls(form, { state: 'empty', message: 'Choose a photo or PDF to extract its text.' });
+}
+
+function setRecipeImportUrlStatus(form, message, state = '') {
+  const status = form?.querySelector?.('#recipe-import-url-status');
+  if (!status) return;
+  status.textContent = message;
+  status.className = `muted recipe-import-source-help recipe-import-url-status ${state}`.trim();
+}
+
+function normalizeRecipeImportUrl(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+  const withProtocol = /^https?:\/\//i.test(rawValue) ? rawValue : `https://${rawValue}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
+
+async function importRecipeFromUrl(form) {
+  if (!form) return;
+  const urlInput = form.querySelector('#recipe-import-url');
+  const url = normalizeRecipeImportUrl(urlInput?.value || '');
+  if (!url) {
+    showToast('Enter a valid recipe URL.');
+    urlInput?.focus();
+    return;
+  }
+
+  const button = form.querySelector('#recipe-import-url-button');
+  const originalButtonHtml = button?.innerHTML;
+  if (button) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<i class="ti ti-loader-2 recipe-ai-spinner"></i>Importing...';
+  }
+  setRecipeImportUrlStatus(form, 'Reading the recipe page…', 'loading');
+
+  try {
+    const result = await api('/api/recipes/import/url', {
+      method: 'POST',
+      body: { url }
+    });
+    const rawText = String(result.rawText || '').trim();
+    if (!rawText) throw new Error('No recipe text was found at that URL.');
+
+    recipeImportScan = { dataUrl: '', name: '', type: '' };
+    recipeImportSourceType = 'url';
+    recipeImportSourceUrl = result.url || url;
+    if (urlInput) {
+      urlInput.value = recipeImportSourceUrl;
+      urlInput.setCustomValidity('');
+    }
+    recipeImportAiMeta = null;
+    recipeImportOcrInFlight = false;
+    recipeImportOcrRequestId += 1;
+    const preview = form.querySelector('#recipe-import-preview');
+    if (preview) {
+      preview.classList.add('empty', 'hidden');
+      preview.textContent = '';
+    }
+    if (form.elements.importText) form.elements.importText.value = rawText;
+    if (form.elements.tags && form.elements.tags.value.trim() === 'printed, family') form.elements.tags.value = 'url';
+    if (form.elements.importNotes && !form.elements.importNotes.value.trim()) {
+      form.elements.importNotes.value = `Source URL: ${recipeImportSourceUrl}`;
+    }
+    setRecipeImportScanDependentVisibility(form, true);
+    setRecipeImportOptionsCollapsed(form, true, 'Recipe URL loaded');
+    updateRecipeOcrControls(form, { state: 'ready', message: 'URL imported. Review the text or clean it up with AI.' });
+    setRecipeImportUrlStatus(form, 'Recipe page imported. Review the draft below.', 'success');
+    await cleanRecipeImportWithAi(form);
+  } catch (error) {
+    setRecipeImportOptionsCollapsed(form, false);
+    setRecipeImportUrlStatus(form, error.message || 'Unable to import that recipe URL.', 'error');
+    showToast(error.message || 'Unable to import that recipe URL.');
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = originalButtonHtml;
+    }
+  }
 }
 
 function updateRecipeOcrControls(form, { state = 'ready', message = '' } = {}) {
@@ -2876,11 +2529,13 @@ async function extractRecipeTextFromScan(form, { automatic = false } = {}) {
     if (form.elements.importText) form.elements.importText.value = rawText;
     recipeImportAiMeta = null;
     resetRecipeAiReview(form);
+    const populatedSections = fillRecipeImportFromText(form, { automatic: true });
     updateRecipeOcrControls(form, {
       state: 'success',
-      message: 'Text extracted. Review it below, then select Clean Up With AI.'
+      message: populatedSections
+        ? 'Text extracted and recipe fields filled automatically. Review the draft or use Clean with AI.'
+        : 'Text extracted, but no recipe sections were detected. Review the extracted text or use Clean with AI.'
     });
-    showToast('Recipe text extracted. Review it before AI cleanup.');
   } catch (error) {
     if (requestId !== recipeImportOcrRequestId) return;
     updateRecipeOcrControls(form, {
@@ -2901,18 +2556,38 @@ async function extractRecipeTextFromScan(form, { automatic = false } = {}) {
   }
 }
 
-function fillRecipeImportFromText(form) {
-  if (!form) return;
+function fillRecipeImportFromText(form, { automatic = false } = {}) {
+  if (!form) return 0;
   recipeImportAiMeta = null;
   resetRecipeAiReview(form);
   const text = form.elements.importText?.value || '';
   const parsed = parseImportedRecipeText(text, recipeImportScan.name);
-  if (parsed.name && !form.elements.name.value.trim()) form.elements.name.value = parsed.name;
-  if (parsed.ingredientsText && !form.elements.ingredientsText.value.trim()) form.elements.ingredientsText.value = parsed.ingredientsText;
-  if (parsed.instructions && !form.elements.instructions.value.trim()) form.elements.instructions.value = parsed.instructions;
+  const currentName = String(form.elements.recipeName?.value || '').trim();
+
+  if (parsed.name && (!currentName || aiRecipeNameMatchesScanFilename(currentName, recipeImportScan.name))) {
+    form.elements.recipeName.value = parsed.name;
+  }
+  if (parsed.ingredientsText && form.elements.ingredientsText) {
+    form.elements.ingredientsText.value = parsed.ingredientsText;
+  }
+  if (parsed.instructions && form.elements.instructions) {
+    form.elements.instructions.value = parsed.instructions;
+  }
+  if (parsed.notes && form.elements.importNotes) {
+    const existingSourceUrl = String(form.elements.importNotes.value || '')
+      .split(/\r?\n/)
+      .find(line => /^Source URL:/i.test(line.trim())) || '';
+    form.elements.importNotes.value = [parsed.notes, existingSourceUrl].filter(Boolean).join('\n');
+  }
   if (parsed.prepTime) setDurationInputs(form, 'importPrep', parsed.prepTime);
-  if (parsed.cookTime && !Number(form.elements.cookTime.value)) form.elements.cookTime.value = parsed.cookTime;
-  showToast('Import fields filled from text. Review before saving.');
+  if (parsed.cookTime && form.elements.cookTime) form.elements.cookTime.value = parsed.cookTime;
+
+  resizeRecipeImportTextareas(form);
+  const populatedSections = [parsed.ingredientsText, parsed.instructions, parsed.notes].filter(Boolean).length;
+  showToast(populatedSections
+    ? (automatic ? 'Recipe fields filled automatically. Review before saving.' : 'Recipe fields filled from extracted text. Review before saving.')
+    : 'No recipe sections were detected. Review the extracted text or use Clean with AI.');
+  return populatedSections;
 }
 
 async function saveImportedRecipe(event) {
@@ -2930,7 +2605,10 @@ async function saveImportedRecipe(event) {
 
   try {
     const body = formToBody(formElement);
+    body.name = String(body.recipeName || '').trim().slice(0, 120);
+    delete body.recipeName;
     delete body.recipeFile;
+    delete body.recipeUrl;
     delete body.importText;
     body.prepTime = durationInputsToMinutes(formElement, 'importPrep');
     delete body.importPrepHours;
@@ -2938,8 +2616,20 @@ async function saveImportedRecipe(event) {
     body.favorite = getFormCheckboxChecked(formElement, 'favorite');
     body.originalScan = recipeImportScan.dataUrl;
     body.originalScanName = recipeImportScan.name;
-    body.importSource = 'printed';
+    body.importSource = recipeImportSourceType === 'url' ? 'url' : 'printed';
     body.ocrText = String(formElement.elements.importText?.value || '').trim().slice(0, 15000);
+    if (recipeImportSourceUrl) {
+      const sourceLine = `Source URL: ${recipeImportSourceUrl}`.slice(0, 500);
+      const notesWithoutSource = String(body.importNotes || '')
+        .split(/\r?\n/)
+        .filter(line => !/^Source URL:/i.test(line.trim()))
+        .join('\n')
+        .trim();
+      const availableNoteLength = Math.max(0, 500 - sourceLine.length - (notesWithoutSource ? 1 : 0));
+      body.importNotes = [notesWithoutSource.slice(0, availableNoteLength), sourceLine].filter(Boolean).join('\n').slice(0, 500);
+    } else {
+      body.importNotes = String(body.importNotes || '').trim().slice(0, 500);
+    }
     body.aiCleaned = Boolean(recipeImportAiMeta);
     body.aiModel = recipeImportAiMeta?.model || '';
     body.aiConfidence = Number(recipeImportAiMeta?.confidence || 0);
@@ -2955,11 +2645,11 @@ async function saveImportedRecipe(event) {
 
     if (keepOpen) {
       resetRecipeImportForm(formElement);
-      showToast('Recipe imported. Ready for the next binder page.');
+      showToast('Recipe imported. Ready for the next import.');
     } else {
       closeRecipeImportModal();
       renderRecipes();
-      showToast('Printed recipe imported.');
+      showToast(recipeImportSourceType === 'url' ? 'Recipe URL imported.' : 'Printed recipe imported.');
     }
   } catch (error) {
     showToast(error.message || 'Recipe import failed. Please try again.');
@@ -2979,7 +2669,8 @@ function resetRecipeImportForm(form) {
   recipeImportAiMeta = null;
   clearRecipeImportScan();
   resetRecipeAiReview(form);
-  form.elements.importText?.focus();
+  setRecipeImportUrlStatus(form, 'Paste a recipe link to import it, or use a photo/PDF below.');
+  form.querySelector('#recipe-import-url')?.focus();
 }
 
 function resetRecipeAiReview(form) {
@@ -2993,8 +2684,8 @@ async function cleanRecipeImportWithAi(form) {
   if (!form) return;
   const rawText = String(form.elements.importText?.value || '').trim();
   if (rawText.length < 20) {
-    showToast('Paste at least a few lines of recipe text before using AI cleanup.');
-    form.elements.importText?.focus();
+    showToast('Add at least a few lines of recipe text before using AI cleanup.');
+    openRecipeImportTextModal(form);
     return;
   }
 
@@ -3006,7 +2697,8 @@ async function cleanRecipeImportWithAi(form) {
   if (button) {
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    button.innerHTML = '<i class="ti ti-loader-2 recipe-ai-spinner"></i>Cleaning Recipe...';
+    button.classList.add('is-thinking');
+    button.innerHTML = `${recipeAiMatrixIconMarkup()}<span class="recipe-ai-button-label">Thinking</span>`;
   }
   if (review) {
     review.classList.remove('hidden');
@@ -3043,13 +2735,14 @@ async function cleanRecipeImportWithAi(form) {
     recipeImportAiMeta = null;
     if (review) {
       review.classList.remove('hidden');
-      review.innerHTML = `<div class="recipe-ai-error"><i class="ti ti-alert-circle"></i><div><strong>AI cleanup unavailable</strong><p>${escapeHtml(error.message || 'Try again or use Fill From Text.')}</p></div></div>`;
+      review.innerHTML = `<div class="recipe-ai-error"><i class="ti ti-alert-circle"></i><div><strong>AI cleanup unavailable</strong><p>${escapeHtml(error.message || 'Try again or edit the extracted text.')}</p></div></div>`;
     }
     showToast(error.message || 'AI cleanup failed.');
   } finally {
     if (button?.isConnected) {
       button.disabled = false;
       button.removeAttribute('aria-busy');
+      button.classList.remove('is-thinking');
       button.innerHTML = originalHtml;
     }
   }
@@ -3073,8 +2766,8 @@ function aiRecipeNameMatchesScanFilename(name, filename) {
 function applyAiRecipeDraftToForm(form, draft) {
   if (!form) return;
   const aiRecipeName = String(draft.name || '').trim();
-  if (form.elements.name && aiRecipeName && !aiRecipeNameMatchesScanFilename(aiRecipeName, recipeImportScan.name)) {
-    form.elements.name.value = aiRecipeName;
+  if (form.elements.recipeName && aiRecipeName && !aiRecipeNameMatchesScanFilename(aiRecipeName, recipeImportScan.name)) {
+    form.elements.recipeName.value = aiRecipeName;
   }
   if (form.elements.cuisine) form.elements.cuisine.value = draft.cuisine || '';
   if (form.elements.mealTypes) form.elements.mealTypes.value = (draft.mealTypes || []).join(', ') || 'dinner';
@@ -3105,6 +2798,7 @@ function applyAiRecipeDraftToForm(form, draft) {
     ].filter(Boolean);
     form.elements.importNotes.value = details.join('\n');
   }
+  resizeRecipeImportTextareas(form);
 }
 
 function formatAiIngredientLine(ingredient) {
@@ -3127,15 +2821,22 @@ function renderRecipeAiReview(review, meta) {
 
   review.classList.remove('hidden');
   review.innerHTML = `
-    <div class="recipe-ai-review-head">
-      <div>
-        <strong><i class="ti ti-sparkles"></i>AI Draft Ready</strong>
-        <p>Review and edit every field before saving.</p>
+    <details class="recipe-ai-review-details">
+      <summary class="recipe-ai-review-summary">
+        <span class="recipe-ai-review-title-row">
+          <strong><i class="ti ti-sparkles"></i>AI Draft Ready</strong>
+          <span class="recipe-ai-confidence ${confidenceClass}">${confidence}% confidence</span>
+        </span>
+        <i class="ti ti-chevron-down recipe-ai-review-chevron" aria-hidden="true"></i>
+      </summary>
+      <div class="recipe-ai-review-body">
+        <div class="recipe-ai-review-body-inner">
+          <p class="recipe-ai-review-description">Review and edit every field before saving.</p>
+          ${warnings.length ? `<div class="recipe-ai-warning-block"><strong>AI Warnings</strong><ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>` : '<p class="recipe-ai-no-warnings"><i class="ti ti-circle-check"></i>No specific transcription warnings were returned.</p>'}
+          ${unclearFields.length ? `<p class="recipe-ai-unclear"><strong>Check these fields:</strong> ${unclearFields.map(escapeHtml).join(', ')}</p>` : ''}
+        </div>
       </div>
-      <span class="recipe-ai-confidence ${confidenceClass}">${confidence}% confidence</span>
-    </div>
-    ${warnings.length ? `<div class="recipe-ai-warning-block"><strong>AI Warnings</strong><ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>` : '<p class="recipe-ai-no-warnings"><i class="ti ti-circle-check"></i>No specific transcription warnings were returned.</p>'}
-    ${unclearFields.length ? `<p class="recipe-ai-unclear"><strong>Check these fields:</strong> ${unclearFields.map(escapeHtml).join(', ')}</p>` : ''}
+    </details>
   `;
 }
 
@@ -3208,48 +2909,169 @@ function fileToDataUrl(file) {
 }
 
 function parseImportedRecipeText(text, fileName = '') {
-  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const title = lines.find(line => !isRecipeSectionLabel(line) && !isRecipeMetaLine(line)) || titleFromFileName(fileName);
-  const ingredientIndex = lines.findIndex(line => /^ingredients?[:]?$/i.test(line));
-  const instructionIndex = lines.findIndex(line => /^(instructions?|directions?|method|preparation|steps)[:]?$/i.test(line));
-  let ingredientLines = [];
-  let instructionLines = [];
+  const lines = normalizeImportedRecipeLines(text);
+  const sections = { ingredients: [], instructions: [], notes: [] };
+  const prelude = [];
+  let activeSection = '';
+  let title = '';
+  let titleIndex = -1;
 
-  if (ingredientIndex >= 0) {
-    const end = instructionIndex > ingredientIndex ? instructionIndex : lines.length;
-    ingredientLines = lines.slice(ingredientIndex + 1, end);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const heading = getImportedRecipeSection(line);
+    if (heading) {
+      activeSection = heading.section;
+      if (heading.content) sections[activeSection].push(heading.content);
+      continue;
+    }
+
+    if (!title && !isRecipeMetaLine(line) && !looksLikeImportedIngredient(line) && !looksLikeImportedInstruction(line)) {
+      title = line;
+      titleIndex = index;
+      continue;
+    }
+
+    if (activeSection) sections[activeSection].push(line);
+    else if (index !== titleIndex) prelude.push(line);
   }
 
-  if (instructionIndex >= 0) {
-    instructionLines = lines.slice(instructionIndex + 1);
-  }
+  let ingredientLines = cleanImportedRecipeSectionLines(sections.ingredients, 'ingredients');
+  let instructionLines = cleanImportedRecipeSectionLines(sections.instructions, 'instructions');
+  const explicitNoteLines = cleanImportedRecipeSectionLines(sections.notes, 'notes');
+  const contentWithoutTitle = lines.filter((_, index) => index !== titleIndex && !getImportedRecipeSection(lines[index]));
 
-  if (!ingredientLines.length && !instructionLines.length) {
-    const numberedIndex = lines.findIndex(line => /^\d+[.)]\s+/.test(line));
-    if (numberedIndex > 1) {
-      ingredientLines = lines.slice(1, numberedIndex);
-      instructionLines = lines.slice(numberedIndex);
+  if (ingredientLines.length && !instructionLines.length) {
+    const instructionStart = ingredientLines.findIndex((line, index) => index > 0 && looksLikeImportedInstruction(line));
+    if (instructionStart > 0) {
+      instructionLines = ingredientLines.slice(instructionStart);
+      ingredientLines = ingredientLines.slice(0, instructionStart);
     }
   }
+
+  if (!ingredientLines.length || !instructionLines.length) {
+    const fallbackLines = contentWithoutTitle.filter(line => !isRecipeMetaLine(line));
+    const instructionStart = fallbackLines.findIndex(looksLikeImportedInstruction);
+
+    if (!ingredientLines.length && instructionStart > 0) {
+      const beforeInstructions = fallbackLines.slice(0, instructionStart);
+      if (beforeInstructions.some(looksLikeImportedIngredient)) ingredientLines = beforeInstructions;
+    }
+    if (!instructionLines.length && instructionStart >= 0) {
+      instructionLines = fallbackLines.slice(instructionStart);
+    }
+
+    if (!ingredientLines.length) {
+      ingredientLines = fallbackLines.filter(looksLikeImportedIngredient);
+    }
+    if (!instructionLines.length) {
+      instructionLines = fallbackLines.filter(looksLikeImportedInstruction);
+    }
+  }
+
+  ingredientLines = dedupeImportedRecipeLines(ingredientLines)
+    .filter(line => !looksLikeImportedInstruction(line) && !isRecipeMetaLine(line));
+  instructionLines = dedupeImportedRecipeLines(instructionLines)
+    .filter(line => !isRecipeMetaLine(line));
+
+  const usedLines = new Set([...ingredientLines, ...instructionLines].map(normalizeImportedRecipeLineForComparison));
+  const inferredNoteLines = prelude
+    .filter(line => !usedLines.has(normalizeImportedRecipeLineForComparison(line)))
+    .filter(line => !looksLikeImportedIngredient(line) && !looksLikeImportedInstruction(line))
+    .filter(line => !/^(?:prep(?:aration)?\s*time|cook(?:ing)?\s*time|total\s*time)\b/i.test(line));
+  const noteLines = dedupeImportedRecipeLines([...explicitNoteLines, ...inferredNoteLines]);
 
   const prepTime = findRecipeDuration(lines, /prep(?:aration)?\s*time/i);
   const cookTime = findRecipeDuration(lines, /cook(?:ing)?\s*time/i);
 
   return {
-    name: title,
-    ingredientsText: ingredientLines.filter(line => !isRecipeSectionLabel(line) && !isRecipeMetaLine(line)).join('\n'),
-    instructions: instructionLines.filter(line => !isRecipeSectionLabel(line)).join('\n'),
+    name: title || titleFromFileName(fileName),
+    ingredientsText: ingredientLines.join('\n'),
+    instructions: instructionLines.join('\n'),
+    notes: noteLines.join('\n').slice(0, 500),
     prepTime,
     cookTime
   };
 }
 
+function normalizeImportedRecipeLines(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/([^\n])\s+((?:INGREDIENTS?|INSTRUCTIONS?|DIRECTIONS?|METHOD|STEPS?|RECIPE NOTES?|NOTES?|TIPS?)\s*[:\-–—])/g, '$1\n$2')
+    .replace(/(\S)\s+(?=\d+[.)]\s+[A-Z])/g, '$1\n')
+    .split('\n')
+    .map(line => line.replace(/^[|]+|[|]+$/g, '').replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function getImportedRecipeSection(line) {
+  const value = String(line || '').trim().replace(/^#+\s*/, '').replace(/[*_]+/g, '');
+  const sectionPatterns = [
+    ['ingredients', /^(?:ingredients?|what you(?:'|’)?ll need|you will need)\b\s*(?:[:\-–—]\s*)?(.*)$/i],
+    ['instructions', /^(?:instructions?|directions?|method|steps?|procedure|how to make|preparation(?!\s*time\b))\b\s*(?:[:\-–—]\s*)?(.*)$/i],
+    ['notes', /^(?:recipe notes?|notes?|cook(?:'|’)?s notes?|chef(?:'|’)?s notes?|tips?|variations?|serving suggestions?)\b\s*(?:[:\-–—]\s*)?(.*)$/i]
+  ];
+
+  for (const [section, pattern] of sectionPatterns) {
+    const match = value.match(pattern);
+    if (!match) continue;
+    return { section, content: cleanImportedRecipeLine(match[1] || '') };
+  }
+  return null;
+}
+
+function cleanImportedRecipeSectionLines(lines, section) {
+  return (lines || [])
+    .map(cleanImportedRecipeLine)
+    .filter(Boolean)
+    .filter(line => !getImportedRecipeSection(line))
+    .filter(line => section === 'notes' || !isRecipeMetaLine(line));
+}
+
+function cleanImportedRecipeLine(line) {
+  return String(line || '')
+    .replace(/^[-*•▪◦‣]+\s*/, '')
+    .replace(/^\[(?:unclear|illegible)\]\s*$/i, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+function dedupeImportedRecipeLines(lines) {
+  const seen = new Set();
+  return (lines || []).filter(line => {
+    const key = normalizeImportedRecipeLineForComparison(line);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeImportedRecipeLineForComparison(line) {
+  return cleanImportedRecipeLine(line).toLowerCase().replace(/[^a-z0-9¼½¾⅓⅔⅛⅜⅝⅞]+/g, ' ').trim();
+}
+
+function looksLikeImportedInstruction(line) {
+  const value = cleanImportedRecipeLine(line);
+  if (!value) return false;
+  if (/^\d+[.)]\s+/.test(value)) return true;
+  return /^(?:preheat|heat|mix|stir|add|combine|whisk|beat|fold|pour|place|put|arrange|spread|season|bake|cook|roast|grill|broil|boil|simmer|reduce|cover|uncover|chill|refrigerate|freeze|remove|transfer|drain|rinse|slice|chop|cut|blend|process|serve|garnish|let|set|bring|brush|sprinkle|top)\b/i.test(value);
+}
+
+function looksLikeImportedIngredient(line) {
+  const raw = String(line || '').trim();
+  const value = cleanImportedRecipeLine(raw);
+  if (!value || looksLikeImportedInstruction(value)) return false;
+  if (/^[-*•▪◦‣]+\s+/.test(raw)) return true;
+  const startsWithQuantity = /^(?:(?:\d+(?:[ ./⁄-]\d+)?|[¼½¾⅓⅔⅛⅜⅝⅞])|(?:one|two|three|four|five|six|seven|eight|nine|ten))\b/i.test(value);
+  const hasUnit = /\b(?:cups?|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|cloves?|cans?|packages?|pkgs?|sticks?|slices?|sprigs?|pinch(?:es)?|dash(?:es)?|heads?|bunch(?:es)?|large|medium|small)\b/i.test(value);
+  return startsWithQuantity || hasUnit || /\b(?:to taste|as needed|divided|softened|melted|chopped|diced|minced|sliced)\b/i.test(value);
+}
+
 function isRecipeSectionLabel(line) {
-  return /^(ingredients?|instructions?|directions?|method|preparation|steps)[:]?$/i.test(String(line || '').trim());
+  return Boolean(getImportedRecipeSection(line));
 }
 
 function isRecipeMetaLine(line) {
-  return /^(prep|cook|total|serves|servings|yield)\b/i.test(String(line || '').trim());
+  return /^(?:prep(?:aration)?\s*time|cook(?:ing)?\s*time|total\s*time|serves?|servings?|yield|makes?|oven|temperature)\b/i.test(String(line || '').trim());
 }
 
 function findRecipeDuration(lines, labelPattern) {
@@ -3600,83 +3422,94 @@ function renderRestaurants() {
   });
 }
 
-function renderGrocery() {
+function groceryViewMarkup({ embedded = false } = {}) {
   const grouped = groupBy(state.grocery, item => item.category || 'Other');
 
-  pageRoot.innerHTML = `
-    <section class="grid two">
-      <form id="grocery-form" class="form-card">
-        <h3>Add Grocery Item</h3>
-        <div class="form-grid">
-          <label>Name<input name="name" required placeholder="Chicken thighs" /></label>
-          <label>Category<input name="category" placeholder="Meat, Produce, Pantry" /></label>
-          <label>Quantity<input name="quantity" placeholder="2" /></label>
-          <label>Unit<input name="unit" placeholder="lb, bag, box" /></label>
+  return `
+    <div class="${embedded ? 'planner-grocery-view' : 'grocery-page-view'}">
+      <section class="grid two">
+        <form id="grocery-form" class="form-card">
+          <h3>Add Grocery Item</h3>
+          <div class="form-grid">
+            <label>Name<input name="name" required placeholder="Chicken thighs" /></label>
+            <label>Category<input name="category" placeholder="Meat, Produce, Pantry" /></label>
+            <label>Quantity<input name="quantity" placeholder="2" /></label>
+            <label>Unit<input name="unit" placeholder="lb, bag, box" /></label>
+          </div>
+          <button class="primary full" type="submit">Add Item</button>
+        </form>
+        <article class="card">
+          <h3>Grocery Controls</h3>
+          <div class="action-row">
+            <button class="secondary" id="generate-grocery-here">Generate From This Week</button>
+            <button class="danger" id="clear-checked">Clear Checked</button>
+          </div>
+        </article>
+      </section>
+      <section class="card">
+        <h3>Shared Grocery List</h3>
+        <div class="list">
+          ${state.grocery.length ? Object.entries(grouped).map(([category, items]) => groceryGroup(category, items)).join('') : '<div class="empty">No grocery items yet.</div>'}
         </div>
-        <button class="primary full" type="submit">Add Item</button>
-      </form>
-      <article class="card">
-        <h3>Grocery Controls</h3>
-        <div class="action-row">
-          <button class="secondary" id="generate-grocery-here">Generate From This Week</button>
-          <button class="danger" id="clear-checked">Clear Checked</button>
-        </div>
-      </article>
-    </section>
-    <section class="card">
-      <h3>Shared Grocery List</h3>
-      <div class="list">
-        ${state.grocery.length ? Object.entries(grouped).map(([category, items]) => groceryGroup(category, items)).join('') : '<div class="empty">No grocery items yet.</div>'}
-      </div>
-    </section>
+      </section>
+    </div>
   `;
+}
 
-  $('#grocery-form').addEventListener('submit', async event => {
+function bindGroceryView(root = pageRoot, rerender = renderGrocery) {
+  if (!root) return;
+
+  root.querySelector('#grocery-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     const formElement = event.currentTarget;
     await withSaveFeedback(formElement, async () => {
       await api('/api/grocery', { method: 'POST', body: formToBody(formElement) });
       formElement.reset();
       await Promise.all([loadGrocery(), loadStats()]);
-      renderGrocery();
+      await Promise.resolve(rerender());
     }, 'Grocery item added.');
   });
 
-  $('#generate-grocery-here').addEventListener('click', async () => {
+  root.querySelector('#generate-grocery-here')?.addEventListener('click', async () => {
     const result = await api('/api/grocery/generate-from-plan', { method: 'POST', body: { weekStart: getPlannerRangeStart(), days: getPlannerDisplayDays() } });
     await Promise.all([loadGrocery(), loadStats()]);
     showToast(`Added ${result.createdCount} grocery item${result.createdCount === 1 ? '' : 's'} from planned recipes.`);
-    renderGrocery();
+    await Promise.resolve(rerender());
   });
 
-  $('#clear-checked').addEventListener('click', async () => {
+  root.querySelector('#clear-checked')?.addEventListener('click', async () => {
     const result = await api('/api/grocery/clear-checked', { method: 'POST', body: {} });
     await Promise.all([loadGrocery(), loadStats()]);
     showToast(`Cleared ${result.deleted} checked item${result.deleted === 1 ? '' : 's'}.`);
-    renderGrocery();
+    await Promise.resolve(rerender());
   });
 
-  pageRoot.querySelectorAll('[data-check-grocery]').forEach(input => {
+  root.querySelectorAll('[data-check-grocery]').forEach(input => {
     input.addEventListener('change', async () => {
-      const item = state.grocery.find(entry => entry._id === input.dataset.checkGrocery);
+      const item = state.grocery.find(entry => String(entry._id) === String(input.dataset.checkGrocery));
       if (!item) return;
       await api(`/api/grocery/${item._id}`, { method: 'PUT', body: { ...item, checked: input.checked } });
       await Promise.all([loadGrocery(), loadStats()]);
-      renderGrocery();
+      await Promise.resolve(rerender());
     });
   });
 
-  pageRoot.querySelectorAll('[data-delete-grocery]').forEach(button => {
+  root.querySelectorAll('[data-delete-grocery]').forEach(button => {
     button.addEventListener('click', async () => {
       await api(`/api/grocery/${button.dataset.deleteGrocery}`, { method: 'DELETE' });
       await Promise.all([loadGrocery(), loadStats()]);
       showToast('Grocery item deleted.');
-      renderGrocery();
+      await Promise.resolve(rerender());
     });
   });
 }
 
-function renderHistory() {
+function renderGrocery() {
+  pageRoot.innerHTML = groceryViewMarkup();
+  bindGroceryView(pageRoot, renderGrocery);
+}
+
+function historyViewMarkup({ embedded = false } = {}) {
   const sortedHistory = [...state.history].sort((a, b) => {
     const byDate = String(b.date || '').localeCompare(String(a.date || ''));
     if (byDate) return byDate;
@@ -3687,78 +3520,84 @@ function renderHistory() {
     ? `Showing all ${sortedHistory.length} meal${sortedHistory.length === 1 ? '' : 's'}.`
     : `Showing ${visibleHistory.length} of ${sortedHistory.length} meals.`;
 
-  pageRoot.innerHTML = `
-    <section class="grid two">
-      <form id="history-form" class="form-card">
-        <h3>Add Meal History</h3>
-        <div class="form-grid">
-          <label>Date<input name="date" type="date" value="${dateISO(new Date())}" required /></label>
-          <label>Meal Type<select name="mealType">${mealTypes.map(type => option(type, titleCase(type), 'dinner')).join('')}</select></label>
-          <label>Name<input name="name" required placeholder="Chicken pasta" /></label>
-          <label>Cuisine<input name="cuisine" placeholder="Italian" /></label>
-          <label>Rating<select name="rating">${ratingOptions()}</select></label>
-          <label>Cost<input name="cost" type="number" min="0" step="0.01" value="0" /></label>
-          <label class="wide">Notes<textarea name="notes" placeholder="Would make again, needs more spice, etc."></textarea></label>
-        </div>
-        <button class="primary full" type="submit">Save History</button>
-      </form>
-      <article class="card history-card">
-        <div class="history-card-header">
-          <div>
-            <h3>Meal History</h3>
-            <p class="muted">${historySummary}</p>
+  return `
+    <div class="${embedded ? 'settings-embedded-history' : 'history-page-view'}">
+      <section class="grid two">
+        <form id="history-form" class="form-card">
+          <h3>Add Meal History</h3>
+          <div class="form-grid">
+            <label>Date<input name="date" type="date" value="${dateISO(new Date())}" required /></label>
+            <label>Meal Type<select name="mealType">${mealTypes.map(type => option(type, titleCase(type), 'dinner')).join('')}</select></label>
+            <label>Name<input name="name" required placeholder="Chicken pasta" /></label>
+            <label>Cuisine<input name="cuisine" placeholder="Italian" /></label>
+            <label>Rating<select name="rating">${ratingOptions()}</select></label>
+            <label>Cost<input name="cost" type="number" min="0" step="0.01" value="0" /></label>
+            <label class="wide">Notes<textarea name="notes" placeholder="Would make again, needs more spice, etc."></textarea></label>
           </div>
-          <div class="history-display-controls" aria-label="Meal history display options">
-            <label>Show By
-              <select id="history-view-mode">
-                ${option('amount', 'Amount', state.historyViewMode)}
-                ${option('date', 'Date', state.historyViewMode)}
-              </select>
-            </label>
-            <label class="history-amount-control ${state.historyViewMode === 'amount' ? '' : 'hidden'}">Meals
-              <select id="history-amount">
-                ${option('5', '5', state.historyAmount)}
-                ${option('10', '10', state.historyAmount)}
-                ${option('20', '20', state.historyAmount)}
-                ${option('50', '50', state.historyAmount)}
-                ${option('all', 'All', state.historyAmount)}
-              </select>
-            </label>
-            <label class="history-date-control ${state.historyViewMode === 'date' ? '' : 'hidden'}">Date Range
-              <select id="history-days">
-                ${option('7', 'Last 7 Days', state.historyDays)}
-                ${option('30', 'Last 30 Days', state.historyDays)}
-                ${option('90', 'Last 90 Days', state.historyDays)}
-                ${option('365', 'Last Year', state.historyDays)}
-                ${option('all', 'All Dates', state.historyDays)}
-              </select>
-            </label>
+          <button class="primary full" type="submit">Save History</button>
+        </form>
+        <article class="card history-card">
+          <div class="history-card-header">
+            <div>
+              <h3>Meal History</h3>
+              <p class="muted">${historySummary}</p>
+            </div>
+            <div class="history-display-controls" aria-label="Meal history display options">
+              <label>Show By
+                <select id="history-view-mode">
+                  ${option('amount', 'Amount', state.historyViewMode)}
+                  ${option('date', 'Date', state.historyViewMode)}
+                </select>
+              </label>
+              <label class="history-amount-control ${state.historyViewMode === 'amount' ? '' : 'hidden'}">Meals
+                <select id="history-amount">
+                  ${option('5', '5', state.historyAmount)}
+                  ${option('10', '10', state.historyAmount)}
+                  ${option('20', '20', state.historyAmount)}
+                  ${option('50', '50', state.historyAmount)}
+                  ${option('all', 'All', state.historyAmount)}
+                </select>
+              </label>
+              <label class="history-date-control ${state.historyViewMode === 'date' ? '' : 'hidden'}">Date Range
+                <select id="history-days">
+                  ${option('7', 'Last 7 Days', state.historyDays)}
+                  ${option('30', 'Last 30 Days', state.historyDays)}
+                  ${option('90', 'Last 90 Days', state.historyDays)}
+                  ${option('365', 'Last Year', state.historyDays)}
+                  ${option('all', 'All Dates', state.historyDays)}
+                </select>
+              </label>
+            </div>
           </div>
-        </div>
-        <div class="list">${visibleHistory.length ? visibleHistory.map(historyItem).join('') : '<div class="empty">No meals match the selected history view.</div>'}</div>
-      </article>
-    </section>
+          <div class="list">${visibleHistory.length ? visibleHistory.map(historyItem).join('') : '<div class="empty">No meals match the selected history view.</div>'}</div>
+        </article>
+      </section>
+    </div>
   `;
+}
 
-  $('#history-view-mode')?.addEventListener('change', event => {
+function bindHistoryView(root = pageRoot, rerender = renderHistory) {
+  if (!root) return;
+
+  root.querySelector('#history-view-mode')?.addEventListener('change', async event => {
     state.historyViewMode = event.currentTarget.value === 'date' ? 'date' : 'amount';
     localStorage.setItem('mealPlannerHistoryViewMode', state.historyViewMode);
-    renderHistory();
+    await Promise.resolve(rerender());
   });
 
-  $('#history-amount')?.addEventListener('change', event => {
+  root.querySelector('#history-amount')?.addEventListener('change', async event => {
     state.historyAmount = event.currentTarget.value;
     localStorage.setItem('mealPlannerHistoryAmount', state.historyAmount);
-    renderHistory();
+    await Promise.resolve(rerender());
   });
 
-  $('#history-days')?.addEventListener('change', event => {
+  root.querySelector('#history-days')?.addEventListener('change', async event => {
     state.historyDays = event.currentTarget.value;
     localStorage.setItem('mealPlannerHistoryDays', state.historyDays);
-    renderHistory();
+    await Promise.resolve(rerender());
   });
 
-  $('#history-form').addEventListener('submit', async event => {
+  root.querySelector('#history-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     const formElement = event.currentTarget;
     await withSaveFeedback(formElement, async () => {
@@ -3766,18 +3605,23 @@ function renderHistory() {
       await api('/api/history', { method: 'POST', body });
       formElement.reset();
       await Promise.all([loadHistory(), loadStats(), loadSuggestions({ mealType: 'dinner' })]);
-      renderHistory();
+      await Promise.resolve(rerender());
     }, 'Meal history saved.');
   });
 
-  pageRoot.querySelectorAll('[data-delete-history]').forEach(button => {
+  root.querySelectorAll('[data-delete-history]').forEach(button => {
     button.addEventListener('click', async () => {
       await api(`/api/history/${button.dataset.deleteHistory}`, { method: 'DELETE' });
       await Promise.all([loadHistory(), loadStats()]);
       showToast('History item deleted.');
-      renderHistory();
+      await Promise.resolve(rerender());
     });
   });
+}
+
+function renderHistory() {
+  pageRoot.innerHTML = historyViewMarkup();
+  bindHistoryView(pageRoot, renderHistory);
 }
 
 function getVisibleHistory(sortedHistory) {
@@ -3798,42 +3642,48 @@ function getVisibleHistory(sortedHistory) {
   return sortedHistory.slice(0, amount);
 }
 
-function renderStats() {
+function statsViewMarkup({ embedded = false } = {}) {
   const stats = state.stats || { totals: {}, cuisineCounts: {}, mealTypeCounts: {}, topRecipes: [], topRestaurants: [] };
   const cuisineMax = Math.max(1, ...Object.values(stats.cuisineCounts || {}));
   const mealMax = Math.max(1, ...Object.values(stats.mealTypeCounts || {}));
 
-  pageRoot.innerHTML = `
-    <section class="grid three">
-      ${kpiCard('Recipes', stats.totals.recipes || 0, 'saved')}
-      ${kpiCard('Restaurants', stats.totals.restaurants || 0, 'saved')}
-      ${kpiCard('Home vs Out', `${stats.totals.homeCooked || 0}/${stats.totals.restaurantMeals || 0}`, 'recipe meals / restaurant meals')}
-    </section>
-    <section class="grid two">
-      <article class="card">
-        <h3>Cuisine Breakdown</h3>
-        <div class="chart-row">
-          ${Object.entries(stats.cuisineCounts || {}).length ? Object.entries(stats.cuisineCounts).map(([name, count]) => statBar(name, count, cuisineMax)).join('') : '<div class="empty">No cuisine data yet.</div>'}
-        </div>
-      </article>
-      <article class="card">
-        <h3>Meal Type Breakdown</h3>
-        <div class="chart-row">
-          ${Object.entries(stats.mealTypeCounts || {}).length ? Object.entries(stats.mealTypeCounts).map(([name, count]) => statBar(titleCase(name), count, mealMax)).join('') : '<div class="empty">No meal type data yet.</div>'}
-        </div>
-      </article>
-    </section>
-    <section class="grid two">
-      <article class="card">
-        <h3>Most Cooked Recipes</h3>
-        <div class="list">${stats.topRecipes?.length ? stats.topRecipes.map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="muted">${item.timesCooked} cooked • ${item.rating}/5</span></div>`).join('') : '<div class="empty">Cook recipe meals to populate this.</div>'}</div>
-      </article>
-      <article class="card">
-        <h3>Most Visited Restaurants</h3>
-        <div class="list">${stats.topRestaurants?.length ? stats.topRestaurants.map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="muted">${item.timesVisited} visits • ${item.rating}/5</span></div>`).join('') : '<div class="empty">Mark restaurant meals eaten to populate this.</div>'}</div>
-      </article>
-    </section>
+  return `
+    <div class="${embedded ? 'settings-embedded-stats' : 'stats-page-view'}">
+      <section class="grid three">
+        ${kpiCard('Recipes', stats.totals.recipes || 0, 'saved')}
+        ${kpiCard('Restaurants', stats.totals.restaurants || 0, 'saved')}
+        ${kpiCard('Home vs Out', `${stats.totals.homeCooked || 0}/${stats.totals.restaurantMeals || 0}`, 'recipe meals / restaurant meals')}
+      </section>
+      <section class="grid two">
+        <article class="card">
+          <h3>Cuisine Breakdown</h3>
+          <div class="chart-row">
+            ${Object.entries(stats.cuisineCounts || {}).length ? Object.entries(stats.cuisineCounts).map(([name, count]) => statBar(name, count, cuisineMax)).join('') : '<div class="empty">No cuisine data yet.</div>'}
+          </div>
+        </article>
+        <article class="card">
+          <h3>Meal Type Breakdown</h3>
+          <div class="chart-row">
+            ${Object.entries(stats.mealTypeCounts || {}).length ? Object.entries(stats.mealTypeCounts).map(([name, count]) => statBar(titleCase(name), count, mealMax)).join('') : '<div class="empty">No meal type data yet.</div>'}
+          </div>
+        </article>
+      </section>
+      <section class="grid two">
+        <article class="card">
+          <h3>Most Cooked Recipes</h3>
+          <div class="list">${stats.topRecipes?.length ? stats.topRecipes.map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="muted">${item.timesCooked} cooked • ${item.rating}/5</span></div>`).join('') : '<div class="empty">Cook recipe meals to populate this.</div>'}</div>
+        </article>
+        <article class="card">
+          <h3>Most Visited Restaurants</h3>
+          <div class="list">${stats.topRestaurants?.length ? stats.topRestaurants.map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="muted">${item.timesVisited} visits • ${item.rating}/5</span></div>`).join('') : '<div class="empty">Mark restaurant meals eaten to populate this.</div>'}</div>
+        </article>
+      </section>
+    </div>
   `;
+}
+
+function renderStats() {
+  pageRoot.innerHTML = statsViewMarkup();
 }
 
 async function renderSettings() {
@@ -3902,6 +3752,30 @@ async function renderSettings() {
           ${data.members.map(member => `<div class="list-item member-list-item"><div class="member-identity">${avatarMarkup(member, 'member')}<div><strong>${escapeHtml(member.name)}</strong><span class="muted">${escapeHtml(member.email)} • ${member.role}</span></div></div></div>`).join('')}
         </div>
       </article>
+      <details class="card mobile-settings-utility-card" data-settings-utility="history" ${state.settingsHistoryOpen ? 'open' : ''}>
+        <summary class="mobile-settings-utility-summary">
+          <span class="mobile-settings-utility-title">
+            <span class="mobile-settings-utility-icon"><i class="ti ti-history" aria-hidden="true"></i></span>
+            <span><strong>History</strong><small>Review and add past meals</small></span>
+          </span>
+          <i class="ti ti-chevron-down mobile-settings-utility-chevron" aria-hidden="true"></i>
+        </summary>
+        <div class="mobile-settings-utility-content" data-settings-history-content>
+          ${historyViewMarkup({ embedded: true })}
+        </div>
+      </details>
+      <details class="card mobile-settings-utility-card" data-settings-utility="stats" ${state.settingsStatsOpen ? 'open' : ''}>
+        <summary class="mobile-settings-utility-summary">
+          <span class="mobile-settings-utility-title">
+            <span class="mobile-settings-utility-icon"><i class="ti ti-chart-bar" aria-hidden="true"></i></span>
+            <span><strong>Stats</strong><small>View household meal analytics</small></span>
+          </span>
+          <i class="ti ti-chevron-down mobile-settings-utility-chevron" aria-hidden="true"></i>
+        </summary>
+        <div class="mobile-settings-utility-content">
+          ${statsViewMarkup({ embedded: true })}
+        </div>
+      </details>
       <article class="card settings-export-card">
         <h3>Manual Backup</h3>
         <p class="muted">Export your account and household data as a JSON backup.</p>
@@ -3915,6 +3789,15 @@ async function renderSettings() {
       ${addressAutocompleteDatalist()}
     </section>
   `;
+
+  pageRoot.querySelectorAll('[data-settings-utility]').forEach(details => {
+    details.addEventListener('toggle', () => {
+      if (details.dataset.settingsUtility === 'history') state.settingsHistoryOpen = details.open;
+      if (details.dataset.settingsUtility === 'stats') state.settingsStatsOpen = details.open;
+    });
+  });
+
+  bindHistoryView(pageRoot.querySelector('[data-settings-history-content]'), renderSettings);
 
   pageRoot.querySelector('#avatar-upload-btn')?.addEventListener('click', () => pageRoot.querySelector('#avatar-upload')?.click());
   pageRoot.querySelector('#avatar-upload')?.addEventListener('change', async event => {
