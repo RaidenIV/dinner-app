@@ -7991,3 +7991,20 @@ body > .slot-tag-modal .slot-tag-modal-card {
   }
 }
 
+
+/* Daily Planner cards expand with their own grid row so every meal detail remains visible. */
+.daily-planner-grid {
+  align-items: stretch;
+  grid-auto-rows: auto;
+}
+
+.daily-planner-grid .calendar-day {
+  height: auto;
+  align-self: stretch;
+  grid-template-rows: auto auto auto;
+}
+
+.daily-planner-grid .calendar-meals {
+  max-height: none;
+  overflow: visible;
+}
