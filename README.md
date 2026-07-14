@@ -1,6 +1,6 @@
-# HomePlate Planner
+# HomeTable Planner
 
-HomePlate Planner is a shared household meal planning app built with plain HTML, CSS, JavaScript, Node.js, Express, and MongoDB.
+HomeTable Planner is a shared household meal planning app built with plain HTML, CSS, JavaScript, Node.js, Express, and MongoDB.
 
 It helps a household decide what to eat by combining a weekly breakfast/lunch/dinner planner, recipe organizer, random restaurant picker, grocery list, meal history, suggestions, and stats.
 
@@ -121,7 +121,7 @@ The Recipe Import Assistant now supports a review-first scan workflow:
 1. Open **Recipes**.
 2. Click **Import Printed Recipe**.
 3. Take a photo or upload a JPG, PNG, WEBP, GIF, or PDF recipe scan.
-4. HomePlate automatically extracts the visible recipe text into the editable text area.
+4. HomeTable automatically extracts the visible recipe text into the editable text area.
 5. Review and correct the extracted text. Use **Extract Text From Scan** to retry when needed.
 6. Click **Clean Up With AI**.
 7. Review the generated recipe fields, confidence score, warnings, and unclear fields.

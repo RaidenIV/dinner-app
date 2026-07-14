@@ -30,6 +30,7 @@ const state = {
   recipeSort: localStorage.getItem('mealPlannerRecipeSort') || 'name-asc',
   restaurants: [],
   customMealFavorites: [],
+  savedSides: [],
   planner: { dates: [], plans: [] },
   grocery: [],
   history: [],
@@ -293,6 +294,7 @@ async function loadBaseData() {
     loadCookbooks(),
     loadRestaurants(),
     loadCustomMealFavorites(),
+    loadSavedSides(),
     loadPlanner(),
     loadGrocery(),
     loadHistory(),
@@ -428,6 +430,10 @@ async function loadRestaurants() {
 
 async function loadCustomMealFavorites() {
   state.customMealFavorites = await api('/api/custom-meal-favorites');
+}
+
+async function loadSavedSides() {
+  state.savedSides = await api('/api/sides');
 }
 
 async function loadPlanner() {
@@ -811,7 +817,6 @@ function plannerDayCard(date, plans, fullCalendar = false) {
   const todayIso = dateISO(new Date());
   const isToday = date === todayIso;
   const isPast = date < todayIso;
-  const allowPastAdd = isMobileWebSidebarViewport();
   const hasOpenMenu = plans.some(plan => String(state.openPlannerMealMenuId) === String(plan._id));
   return `
     <article class="calendar-day ${fullCalendar ? 'full-calendar-day' : ''} ${isToday ? 'today' : ''} ${isPast ? 'past-day' : ''} ${hasOpenMenu ? 'menu-open' : ''}" data-date="${date}">
@@ -820,7 +825,7 @@ function plannerDayCard(date, plans, fullCalendar = false) {
           <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
           <span class="calendar-day-date">${plannerDateFormatter.format(new Date(`${date}T12:00:00`))}</span>
         </div>
-        ${!isPast || allowPastAdd ? `<button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>` : ''}
+        <button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>
       </header>
       <div class="calendar-meals">
         ${plans.length ? plans.map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
@@ -887,10 +892,27 @@ function openCalendarMealForm(date, plan = null) {
     syncSourceFields();
   });
 
-  form.querySelector('[data-add-custom-side]')?.addEventListener('click', () => {
+  const addCustomSideRow = (sideName = '') => {
     const list = form.querySelector('[data-custom-sides-list]');
     if (!list) return;
-    list.insertAdjacentHTML('beforeend', customSideRow());
+    const normalizedSideName = String(sideName || '').trim();
+    const emptyInput = [...list.querySelectorAll('[name="sideName"]')]
+      .find(input => !input.value.trim());
+    if (normalizedSideName && emptyInput) {
+      emptyInput.value = normalizedSideName;
+      emptyInput.focus();
+      return;
+    }
+    list.insertAdjacentHTML('beforeend', customSideRow({ name: normalizedSideName }));
+    list.querySelector('[data-custom-side-row]:last-child [name="sideName"]')?.focus();
+  };
+
+  form.querySelector('[data-add-custom-side]')?.addEventListener('click', () => addCustomSideRow());
+  form.querySelector('[data-saved-side-picker]')?.addEventListener('change', event => {
+    const selectedSide = event.currentTarget.value;
+    if (!selectedSide) return;
+    addCustomSideRow(selectedSide);
+    event.currentTarget.value = '';
   });
 
   form.addEventListener('click', event => {
@@ -899,8 +921,8 @@ function openCalendarMealForm(date, plan = null) {
     const rows = [...form.querySelectorAll('[data-custom-side-row]')];
     if (rows.length <= 1) {
       const row = removeButton.closest('[data-custom-side-row]');
-      row.querySelector('[name="sideQuantity"]').value = '';
-      row.querySelector('[name="sideName"]').value = '';
+      const sideNameInput = row?.querySelector('[name="sideName"]');
+      if (sideNameInput) sideNameInput.value = '';
       return;
     }
     removeButton.closest('[data-custom-side-row]')?.remove();
@@ -967,7 +989,7 @@ function openCalendarMealForm(date, plan = null) {
       if (data.planId && data.originalMealType && data.originalMealType !== data.mealType) {
         await api(`/api/planner/${data.planId}`, { method: 'DELETE' });
       }
-      await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants(), loadCustomMealFavorites()]);
+      await Promise.all([loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants(), loadCustomMealFavorites(), loadSavedSides()]);
       closeCalendarMealModal(true);
       renderPlanner();
     }, 'Meal saved.');
@@ -1057,11 +1079,21 @@ function calendarMealForm(date, plan = null) {
           <div class="custom-side-section">
             <div class="custom-side-header">
               <span>Sides</span>
-              <button class="small-btn" type="button" data-add-custom-side>+ Side</button>
+              <div class="custom-side-header-actions">
+                <label class="visually-hidden" for="saved-side-picker">Add a saved side</label>
+                <select id="saved-side-picker" class="saved-side-picker" data-saved-side-picker aria-label="Add a saved side" ${state.savedSides.length ? '' : 'disabled'}>
+                  <option value="">${state.savedSides.length ? 'Saved Sides' : 'No Saved Sides'}</option>
+                  ${state.savedSides.map(side => `<option value="${escapeAttr(side)}">${escapeHtml(side)}</option>`).join('')}
+                </select>
+                <button class="small-btn" type="button" data-add-custom-side>+ Side</button>
+              </div>
             </div>
             <div class="custom-side-list" data-custom-sides-list>
               ${customSides.map(side => customSideRow(side)).join('')}
             </div>
+            <datalist id="saved-side-options">
+              ${state.savedSides.map(side => `<option value="${escapeAttr(side)}"></option>`).join('')}
+            </datalist>
           </div>
           <label class="checkbox-line custom-favorite-toggle">
             <input type="checkbox" name="saveCustomFavorite" /> Save Custom Meal To Favorites
@@ -1087,7 +1119,7 @@ function calendarMealForm(date, plan = null) {
 function customSideRow(side = {}) {
   return `
     <div class="custom-side-row" data-custom-side-row>
-      <input name="sideName" placeholder="Side" value="${escapeAttr(side.name || '')}" aria-label="Side name" />
+      <input name="sideName" list="saved-side-options" placeholder="Type or select a side" value="${escapeAttr(side.name || '')}" aria-label="Side name" autocomplete="off" />
       <button class="small-btn custom-side-remove" type="button" data-remove-custom-side aria-label="Remove side">×</button>
     </div>
   `;
@@ -2989,7 +3021,7 @@ async function recipeSourceFileToDataUrl(file) {
     return { dataUrl: smallestResult, name: file.name, type: optimizedType };
   }
 
-  throw new Error('HomePlate could not optimize this photo enough for upload. Try cropping tightly around the recipe or choose a lower-resolution copy.');
+  throw new Error('HomeTable could not optimize this photo enough for upload. Try cropping tightly around the recipe or choose a lower-resolution copy.');
 }
 
 function fileToDataUrl(file) {
@@ -3902,7 +3934,7 @@ async function renderSettings() {
       </article>
       <article class="card settings-logout-card">
         <h3>Session</h3>
-        <p class="muted">Log out of this HomePlate account on this device.</p>
+        <p class="muted">Log out of this HomeTable account on this device.</p>
         <button id="settings-logout-btn" class="ghost logout-btn" type="button"><i class="ti ti-logout"></i>Log Out</button>
       </article>
       ${addressAutocompleteDatalist()}
@@ -4712,7 +4744,7 @@ async function exportUserData() {
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const householdName = slugify(data.household?.name || 'homeplate');
+    const householdName = slugify(data.household?.name || 'hometable');
     const date = new Date().toISOString().slice(0, 10);
     link.href = url;
     link.download = `${householdName}-user-data-${date}.json`;
@@ -4727,17 +4759,17 @@ async function exportUserData() {
 }
 
 function slugify(value) {
-  return String(value || 'homeplate')
+  return String(value || 'hometable')
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'homeplate';
+    .replace(/^-+|-+$/g, '') || 'hometable';
 }
 
 function buildInviteMailto(email, householdName, inviteCode) {
-  const subject = `Join ${householdName || 'my household'} on HomePlate`;
+  const subject = `Join ${householdName || 'my household'} on HomeTable`;
   const body = [
-    `I sent you an invite to join ${householdName || 'my household'} on HomePlate.`,
+    `I sent you an invite to join ${householdName || 'my household'} on HomeTable.`,
     '',
     `Create an account and use this household invite code: ${String(inviteCode || '').toUpperCase()}`,
     '',

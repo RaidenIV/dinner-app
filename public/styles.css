@@ -7917,3 +7917,77 @@ body > .slot-tag-modal .slot-tag-modal-card {
     transition: none !important;
   }
 }
+
+/* HomeTable planner fixes: keep daily-card menus visible, preserve card borders, and expose saved sides. */
+.daily-planner-grid .calendar-day:hover {
+  transform: none;
+}
+
+.daily-planner-grid .calendar-day.menu-open,
+.daily-planner-grid .calendar-day.menu-open .calendar-meals,
+.daily-planner-grid .calendar-day.menu-open .calendar-meal.menu-open,
+.daily-planner-grid .calendar-day.menu-open .meal-menu-wrap {
+  overflow: visible !important;
+}
+
+.daily-planner-grid .calendar-day.menu-open {
+  position: relative;
+  z-index: 120;
+}
+
+.daily-planner-grid .calendar-meal.menu-open {
+  position: relative;
+  z-index: 130;
+}
+
+.daily-planner-grid .calendar-meal.menu-open .meal-menu-wrap {
+  z-index: 140;
+}
+
+.daily-planner-grid .calendar-meal.menu-open .meal-action-menu {
+  z-index: 150;
+}
+
+.custom-side-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.saved-side-picker {
+  width: auto;
+  min-width: 116px;
+  max-width: 190px;
+  min-height: 32px;
+  padding: 0 30px 0 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.saved-side-picker:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 620px) {
+  .custom-side-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .custom-side-header-actions {
+    width: 100%;
+  }
+
+  .saved-side-picker {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+  }
+}
+
