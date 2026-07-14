@@ -37,6 +37,8 @@ const state = {
   suggestions: [],
   restaurantSort: localStorage.getItem('mealPlannerRestaurantSort') || 'favorite',
   restaurantListView: localStorage.getItem('mealPlannerRestaurantListView') || 'saved',
+  mobileRestaurantAddOpen: false,
+  mobileRestaurantRandomOpen: false,
   editingRestaurantId: '',
   openRestaurantMenuId: '',
   openPlannerMealMenuId: '',
@@ -525,6 +527,11 @@ function renderPlanner() {
   const fullCalendar = activePlannerDisplay === 'full-calendar';
   const groceryDisplay = mobilePlannerView && activePlannerDisplay === 'grocery';
   const rangeLabel = getPlannerRangeLabel();
+  const plannerDates = [...(state.planner.dates || [])];
+  if (mobilePlannerView && activePlannerDisplay === 'cards') {
+    const todayIndex = plannerDates.indexOf(dateISO(new Date()));
+    if (todayIndex > 0) plannerDates.push(...plannerDates.splice(0, todayIndex));
+  }
 
   const plannerControlsMarkup = `
     <div class="planner-controls" aria-label="Planner display controls">
@@ -575,7 +582,7 @@ function renderPlanner() {
         <h3>Meal Planner</h3>
         <p class="muted">${escapeHtml(rangeLabel)}</p>
       </div>
-      <button class="secondary planner-display-options-button" id="open-planner-display-options" type="button">Display Options</button>
+      <button class="planner-display-options-button" id="open-planner-display-options" type="button"><span>Display Options</span><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
     </section>
     <div class="time-modal-overlay planner-display-options-overlay" id="planner-display-options-modal" role="dialog" aria-modal="true" aria-labelledby="planner-display-options-title" aria-hidden="true">
       <article class="time-modal-card planner-display-options-modal">
@@ -603,7 +610,7 @@ function renderPlanner() {
       ? `<section class="planner-grocery-display" aria-label="Shared grocery list">${groceryViewMarkup({ embedded: true })}</section>`
       : `<section class="calendar-grid ${fullCalendar ? 'full-calendar-grid' : 'daily-planner-grid'}" aria-label="${fullCalendar ? 'Full meal calendar' : 'Daily meal planner'}">
           ${fullCalendar ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => `<div class="full-calendar-weekday">${day}</div>`).join('') : ''}
-          ${state.planner.dates.map(date => plannerDayCard(date, plansByDate[date] || [], fullCalendar)).join('')}
+          ${plannerDates.map(date => plannerDayCard(date, plansByDate[date] || [], fullCalendar)).join('')}
         </section>`}
   `;
 
@@ -804,14 +811,16 @@ function plannerDayCard(date, plans, fullCalendar = false) {
   const todayIso = dateISO(new Date());
   const isToday = date === todayIso;
   const isPast = date < todayIso;
+  const allowPastAdd = isMobileWebSidebarViewport();
+  const hasOpenMenu = plans.some(plan => String(state.openPlannerMealMenuId) === String(plan._id));
   return `
-    <article class="calendar-day ${fullCalendar ? 'full-calendar-day' : ''} ${isToday ? 'today' : ''} ${isPast ? 'past-day' : ''}" data-date="${date}">
+    <article class="calendar-day ${fullCalendar ? 'full-calendar-day' : ''} ${isToday ? 'today' : ''} ${isPast ? 'past-day' : ''} ${hasOpenMenu ? 'menu-open' : ''}" data-date="${date}">
       <header class="calendar-day-header">
         <div>
           <span class="calendar-day-name">${plannerWeekdayFormatter.format(new Date(`${date}T12:00:00`))}</span>
           <span class="calendar-day-date">${plannerDateFormatter.format(new Date(`${date}T12:00:00`))}</span>
         </div>
-        ${isPast ? '' : `<button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>`}
+        ${!isPast || allowPastAdd ? `<button class="calendar-add-btn" type="button" data-add-date="${date}" aria-label="Add meal for ${date}">+</button>` : ''}
       </header>
       <div class="calendar-meals">
         ${plans.length ? plans.map(plannerMealItem).join('') : '<div class="empty compact">No meals planned.</div>'}
@@ -1214,7 +1223,7 @@ function applyFavoriteMealToForm(form, favorite) {
 function plannerMealItem(plan) {
   const isMenuOpen = String(state.openPlannerMealMenuId) === String(plan._id);
   return `
-    <article class="calendar-meal" data-plan-item="${plan._id}">
+    <article class="calendar-meal ${isMenuOpen ? 'menu-open' : ''}" data-plan-item="${plan._id}">
       <div class="calendar-meal-top">
         <div class="calendar-meal-main">
           <div class="badge-row">
@@ -3255,9 +3264,14 @@ function renderRestaurants() {
 
   pageRoot.innerHTML = `
     <section class="grid two">
-      <form id="restaurant-form" class="form-card">
-        <h3>Add Restaurant</h3>
-        <div class="form-grid">
+      <form id="restaurant-form" class="form-card restaurant-mobile-collapsible ${state.mobileRestaurantAddOpen ? 'is-open' : ''}">
+        <button class="restaurant-mobile-collapse-trigger" type="button" data-toggle-restaurant-section="add" aria-expanded="${state.mobileRestaurantAddOpen ? 'true' : 'false'}">
+          <span>Add Restaurant</span>
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div class="restaurant-mobile-collapse-body">
+          <div class="restaurant-mobile-collapse-inner">
+            <div class="form-grid">
           <label>Name<input name="name" required placeholder="Favorite taco spot" /></label>
           ${restaurantCuisinePicker('', 'add-restaurant')}
           <label>Price<select name="priceLevel"><option>$</option><option selected>$$</option><option>$$$</option><option>$$$$</option></select></label>
@@ -3268,17 +3282,22 @@ function renderRestaurants() {
           <label>Tags<input name="tags" placeholder="late night, cheap, delivery" /></label>
           <label class="wide checkbox-line restaurant-favorite"><input type="checkbox" name="favorite" /> Favorite</label>
           <label class="wide checkbox-line restaurant-want-to-go"><input type="checkbox" name="wantToGo" /> Want To Go</label>
-        </div>
-        <button class="primary full" type="submit">Save Restaurant</button>
-      </form>
-      <article class="card random-restaurant-card" id="random-form">
-        <div class="slot-machine-head">
-          <div>
-            <h3>Random Restaurant Selector</h3>
-            <p class="muted">Set your filters and spin for dinner.</p>
+            </div>
+            <button class="primary full" type="submit">Save Restaurant</button>
           </div>
         </div>
-        <form id="random-restaurant-form" class="slot-machine-form">
+      </form>
+      <article class="card random-restaurant-card restaurant-mobile-collapsible ${state.mobileRestaurantRandomOpen ? 'is-open' : ''}" id="random-form">
+        <button class="restaurant-mobile-collapse-trigger" type="button" data-toggle-restaurant-section="random" aria-expanded="${state.mobileRestaurantRandomOpen ? 'true' : 'false'}">
+          <span>Random Restaurant Selector</span>
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div class="restaurant-mobile-collapse-body">
+          <div class="restaurant-mobile-collapse-inner">
+            <div class="slot-machine-head">
+              <p class="muted">Set your filters and spin for dinner.</p>
+            </div>
+            <form id="random-restaurant-form" class="slot-machine-form">
           <div class="slot-select-stack">
             <label class="slot-select-control">Max Price
               <select name="maxPrice">
@@ -3312,8 +3331,10 @@ function renderRestaurants() {
           </div>
           ${restaurantRandomFilterGroups()}
         </form>
-        <div id="random-result" class="slot-machine-result">
-          ${slotMachinePlaceholder()}
+            <div id="random-result" class="slot-machine-result">
+              ${slotMachinePlaceholder()}
+            </div>
+          </div>
         </div>
       </article>
       ${addressAutocompleteDatalist()}
@@ -3353,6 +3374,20 @@ function renderRestaurants() {
       `}
     </section>
   `;
+
+  pageRoot.querySelectorAll('[data-toggle-restaurant-section]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (!isMobileWebSidebarViewport()) return;
+      const section = button.dataset.toggleRestaurantSection;
+      const card = button.closest('.restaurant-mobile-collapsible');
+      if (!card) return;
+      const isOpen = !card.classList.contains('is-open');
+      card.classList.toggle('is-open', isOpen);
+      button.setAttribute('aria-expanded', String(isOpen));
+      if (section === 'add') state.mobileRestaurantAddOpen = isOpen;
+      if (section === 'random') state.mobileRestaurantRandomOpen = isOpen;
+    });
+  });
 
   $('#restaurant-form').addEventListener('submit', async event => {
     event.preventDefault();
