@@ -534,7 +534,7 @@ function renderPlanner() {
   const groceryDisplay = mobilePlannerView && activePlannerDisplay === 'grocery';
   const rangeLabel = getPlannerRangeLabel();
   const plannerDates = [...(state.planner.dates || [])];
-  if (mobilePlannerView && activePlannerDisplay === 'cards') {
+  if (mobilePlannerView && activePlannerDisplay === 'cards' && !state.plannerPreviousWeek) {
     const todayIndex = plannerDates.indexOf(dateISO(new Date()));
     if (todayIndex > 0) plannerDates.push(...plannerDates.splice(0, todayIndex));
   }
