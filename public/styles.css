@@ -8030,3 +8030,186 @@ body > .slot-tag-modal .slot-tag-modal-card {
   }
 }
 
+
+/* Meal queue, Want to Try recipes, and desktop cookbook access */
+.meal-queue-card {
+  margin-bottom: 18px;
+}
+
+.meal-queue-header,
+.desktop-recipe-library-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.meal-queue-header h3,
+.desktop-recipe-library-header h3 {
+  margin: 0;
+}
+
+.meal-queue-header p,
+.desktop-recipe-library-header p {
+  margin: 5px 0 0;
+}
+
+.meal-queue-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.meal-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.meal-queue-item-copy {
+  min-width: 0;
+}
+
+.meal-queue-item-copy strong {
+  display: block;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+
+.meal-queue-item-copy p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.meal-queue-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.meal-queue-item-actions .small-btn {
+  min-height: 38px;
+}
+
+.meal-queue-remove {
+  width: 38px;
+  padding-inline: 0;
+}
+
+.meal-queue-empty {
+  grid-column: 1 / -1;
+}
+
+.meal-queue-modal {
+  max-width: 560px;
+}
+
+.recipe-form-flags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.recipe-form-flags .checkbox-line {
+  width: auto;
+  margin: 0;
+}
+
+.recipe-want-to-try-badge {
+  border-color: color-mix(in srgb, var(--brand) 36%, var(--border));
+  background: color-mix(in srgb, var(--brand) 10%, white);
+  color: var(--brand);
+}
+
+.desktop-recipe-library-header {
+  margin-bottom: 14px;
+}
+
+.desktop-recipe-cookbook-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desktop-recipe-cookbook-controls label {
+  margin: 0;
+}
+
+.desktop-recipe-cookbook-controls select {
+  min-width: 170px;
+  min-height: 40px;
+}
+
+.desktop-recipe-library .item-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 980px) {
+  .meal-queue-card {
+    margin-bottom: 14px;
+    padding: 16px;
+  }
+
+  .meal-queue-header {
+    align-items: center;
+  }
+
+  .meal-queue-header p {
+    max-width: 36rem;
+  }
+
+  .meal-queue-list {
+    grid-template-columns: 1fr;
+    margin-top: 13px;
+  }
+
+  .meal-queue-item {
+    align-items: flex-start;
+  }
+
+  .desktop-recipe-cookbook-controls {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .meal-queue-header {
+    gap: 10px;
+  }
+
+  .meal-queue-header p {
+    font-size: 0.82rem;
+  }
+
+  .meal-queue-header .small-btn {
+    flex: 0 0 auto;
+  }
+
+  .meal-queue-item {
+    flex-direction: column;
+  }
+
+  .meal-queue-item-actions {
+    width: 100%;
+  }
+
+  .meal-queue-item-actions [data-schedule-queue-item] {
+    flex: 1;
+  }
+
+  .recipe-form-flags {
+    gap: 12px;
+  }
+}

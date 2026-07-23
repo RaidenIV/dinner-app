@@ -115,6 +115,7 @@ const recipeSchema = new mongoose.Schema({
   tags: [{ type: String, trim: true }],
   rating: { type: Number, min: 0, max: 5, default: 0 },
   favorite: { type: Boolean, default: false },
+  wantToTry: { type: Boolean, default: false, index: true },
   originalScan: { type: String, default: '', maxlength: 1600000 },
   originalScanName: { type: String, default: '', trim: true, maxlength: 160 },
   importSource: { type: String, enum: ['', 'printed', 'url'], default: '' },
@@ -218,6 +219,16 @@ const savedSideSchema = new mongoose.Schema({
 }, { timestamps: true });
 savedSideSchema.index({ householdId: 1, normalizedName: 1 }, { unique: true });
 
+const mealQueueSchema = new mongoose.Schema({
+  householdId: { type: objectId, ref: 'Household', required: true, index: true },
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  sourceType: { type: String, enum: ['recipe', 'restaurant', 'custom'], default: 'custom' },
+  sourceId: { type: objectId, default: null },
+  notes: { type: String, default: '', trim: true, maxlength: 500 },
+  addedBy: { type: objectId, ref: 'User' }
+}, { timestamps: true });
+mealQueueSchema.index({ householdId: 1, createdAt: -1 });
+
 const Household = mongoose.model('Household', householdSchema);
 const HouseholdInvite = mongoose.model('HouseholdInvite', householdInviteSchema);
 const User = mongoose.model('User', userSchema);
@@ -229,6 +240,7 @@ const GroceryItem = mongoose.model('GroceryItem', groceryItemSchema);
 const MealHistory = mongoose.model('MealHistory', mealHistorySchema);
 const CustomMealFavorite = mongoose.model('CustomMealFavorite', customMealFavoriteSchema);
 const SavedSide = mongoose.model('SavedSide', savedSideSchema);
+const MealQueueItem = mongoose.model('MealQueueItem', mealQueueSchema);
 
 
 const aiRecipeDraftSchema = z.object({
@@ -1132,7 +1144,7 @@ app.get('/api/household', authenticate, async (req, res) => {
 
 app.get('/api/export/user-data', authenticate, async (req, res) => {
   try {
-    const [household, members, invites, recipes, restaurants, customMealFavorites, plannerMeals, groceryItems, mealHistory] = await Promise.all([
+    const [household, members, invites, recipes, cookbooks, restaurants, customMealFavorites, mealQueue, plannerMeals, groceryItems, mealHistory] = await Promise.all([
       Household.findById(req.householdId).lean(),
       User.find({ householdId: req.householdId })
         .select('name email role profilePic createdAt updatedAt')
@@ -1140,8 +1152,10 @@ app.get('/api/export/user-data', authenticate, async (req, res) => {
         .lean(),
       HouseholdInvite.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
       Recipe.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
+      Cookbook.find({ householdId: req.householdId }).sort({ name: 1 }).lean(),
       Restaurant.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
       CustomMealFavorite.find({ householdId: req.householdId }).sort({ updatedAt: -1 }).lean(),
+      MealQueueItem.find({ householdId: req.householdId }).sort({ createdAt: -1 }).lean(),
       MealPlan.find({ householdId: req.householdId }).sort({ date: 1, mealType: 1 }).lean(),
       GroceryItem.find({ householdId: req.householdId }).sort({ checked: 1, category: 1, name: 1 }).lean(),
       MealHistory.find({ householdId: req.householdId }).sort({ date: -1, createdAt: -1 }).lean()
@@ -1158,8 +1172,10 @@ app.get('/api/export/user-data', authenticate, async (req, res) => {
       members,
       invites: invites.map(publicInvite),
       recipes,
+      cookbooks,
       restaurants,
       customMealFavorites,
+      mealQueue,
       plannerMeals,
       groceryItems,
       mealHistory
@@ -1502,6 +1518,7 @@ app.post('/api/recipes', authenticate, async (req, res) => {
       tags: normalizeTags(req.body.tags),
       rating: Number(req.body.rating || 0),
       favorite: Boolean(req.body.favorite),
+      wantToTry: Boolean(req.body.wantToTry),
       originalScan: req.body.originalScan || '',
       originalScanName: req.body.originalScanName || '',
       importSource: req.body.importSource || '',
@@ -1526,6 +1543,9 @@ app.patch('/api/recipes/:id/organize', authenticate, async (req, res) => {
   const update = {};
   if (Object.prototype.hasOwnProperty.call(req.body, 'favorite')) {
     update.favorite = Boolean(req.body.favorite);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'wantToTry')) {
+    update.wantToTry = Boolean(req.body.wantToTry);
   }
   if (Object.prototype.hasOwnProperty.call(req.body, 'tags')) {
     update.tags = normalizeTags(req.body.tags);
@@ -1557,6 +1577,7 @@ app.put('/api/recipes/:id', authenticate, async (req, res) => {
     tags: normalizeTags(req.body.tags),
     rating: Number(req.body.rating || 0),
     favorite: Boolean(req.body.favorite),
+    wantToTry: Boolean(req.body.wantToTry),
     originalScan: req.body.originalScan || '',
     originalScanName: req.body.originalScanName || '',
     importSource: req.body.importSource || '',
@@ -1583,6 +1604,7 @@ app.put('/api/recipes/:id', authenticate, async (req, res) => {
 app.delete('/api/recipes/:id', authenticate, async (req, res) => {
   await Recipe.deleteOne({ _id: req.params.id, householdId: req.householdId });
   await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'recipe', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted recipe' });
+  await MealQueueItem.updateMany({ householdId: req.householdId, sourceType: 'recipe', sourceId: req.params.id }, { sourceType: 'custom', sourceId: null });
   await Cookbook.updateMany({ householdId: req.householdId }, { $pull: { recipeIds: req.params.id } });
   broadcastHouseholdUpdate(req, 'recipes:deleted', { recipeId: req.params.id });
   res.json({ ok: true });
@@ -1751,6 +1773,7 @@ app.put('/api/restaurants/:id', authenticate, async (req, res) => {
 app.delete('/api/restaurants/:id', authenticate, async (req, res) => {
   await Restaurant.deleteOne({ _id: req.params.id, householdId: req.householdId });
   await MealPlan.updateMany({ householdId: req.householdId, sourceType: 'restaurant', sourceId: req.params.id }, { sourceId: null, customName: 'Deleted restaurant' });
+  await MealQueueItem.updateMany({ householdId: req.householdId, sourceType: 'restaurant', sourceId: req.params.id }, { sourceType: 'custom', sourceId: null });
   broadcastHouseholdUpdate(req, 'restaurants:deleted', { restaurantId: req.params.id });
   res.json({ ok: true });
 });
@@ -1833,6 +1856,56 @@ app.post('/api/custom-meal-favorites', authenticate, async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not save custom favorite meal.' });
   }
+});
+
+
+app.get('/api/meal-queue', authenticate, async (req, res) => {
+  const items = await MealQueueItem.find({ householdId: req.householdId }).sort({ createdAt: -1 }).lean();
+  res.json(items);
+});
+
+app.post('/api/meal-queue', authenticate, async (req, res) => {
+  try {
+    const sourceType = ['recipe', 'restaurant', 'custom'].includes(req.body.sourceType) ? req.body.sourceType : 'custom';
+    const sourceId = mongoose.Types.ObjectId.isValid(req.body.sourceId) ? req.body.sourceId : null;
+    let name = String(req.body.name || '').trim();
+    let verifiedSourceId = null;
+
+    if (sourceType === 'recipe') {
+      const recipe = sourceId ? await Recipe.findOne({ _id: sourceId, householdId: req.householdId }).select('name').lean() : null;
+      if (!recipe) return res.status(404).json({ error: 'Recipe not found.' });
+      name = recipe.name;
+      verifiedSourceId = recipe._id;
+    } else if (sourceType === 'restaurant') {
+      const restaurant = sourceId ? await Restaurant.findOne({ _id: sourceId, householdId: req.householdId }).select('name').lean() : null;
+      if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });
+      name = restaurant.name;
+      verifiedSourceId = restaurant._id;
+    }
+
+    name = name.slice(0, 120);
+    if (!name) return res.status(400).json({ error: 'Choose or enter a meal.' });
+
+    const item = await MealQueueItem.create({
+      householdId: req.householdId,
+      name,
+      sourceType,
+      sourceId: verifiedSourceId,
+      notes: String(req.body.notes || '').trim().slice(0, 500),
+      addedBy: req.user._id
+    });
+    broadcastHouseholdUpdate(req, 'meal-queue:created', { itemId: item._id.toString() });
+    res.status(201).json(item);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not add meal to the queue.' });
+  }
+});
+
+app.delete('/api/meal-queue/:id', authenticate, async (req, res) => {
+  const result = await MealQueueItem.deleteOne({ _id: req.params.id, householdId: req.householdId });
+  if (!result.deletedCount) return res.status(404).json({ error: 'Queued meal not found.' });
+  broadcastHouseholdUpdate(req, 'meal-queue:deleted', { itemId: req.params.id });
+  res.json({ ok: true });
 });
 
 app.get('/api/planner', authenticate, async (req, res) => {

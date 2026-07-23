@@ -31,6 +31,7 @@ const state = {
   restaurants: [],
   customMealFavorites: [],
   savedSides: [],
+  mealQueue: [],
   planner: { dates: [], plans: [] },
   grocery: [],
   history: [],
@@ -295,6 +296,7 @@ async function loadBaseData() {
     loadRestaurants(),
     loadCustomMealFavorites(),
     loadSavedSides(),
+    loadMealQueue(),
     loadPlanner(),
     loadGrocery(),
     loadHistory(),
@@ -418,7 +420,7 @@ async function loadRecipes() {
 
 async function loadCookbooks() {
   state.cookbooks = await api('/api/cookbooks');
-  if (state.activeRecipeCookbookId !== 'all' && !state.cookbooks.some(cookbook => String(cookbook._id) === String(state.activeRecipeCookbookId))) {
+  if (!['all', 'want-to-try'].includes(state.activeRecipeCookbookId) && !state.cookbooks.some(cookbook => String(cookbook._id) === String(state.activeRecipeCookbookId))) {
     state.activeRecipeCookbookId = 'all';
     localStorage.setItem('mealPlannerActiveCookbook', 'all');
   }
@@ -434,6 +436,10 @@ async function loadCustomMealFavorites() {
 
 async function loadSavedSides() {
   state.savedSides = await api('/api/sides');
+}
+
+async function loadMealQueue() {
+  state.mealQueue = await api('/api/meal-queue');
 }
 
 async function loadPlanner() {
@@ -515,6 +521,239 @@ function renderDashboard() {
       await renderCurrentPage();
     });
   });
+}
+
+
+function mealQueueItemMarkup(item) {
+  const sourceLabel = item.sourceType === 'recipe'
+    ? 'Recipe'
+    : item.sourceType === 'restaurant'
+      ? 'Restaurant'
+      : 'Meal Idea';
+  return `
+    <article class="meal-queue-item">
+      <div class="meal-queue-item-copy">
+        <div class="badge-row"><span class="badge accent">${escapeHtml(sourceLabel)}</span></div>
+        <strong>${escapeHtml(item.name)}</strong>
+        ${item.notes ? `<p class="muted">${escapeHtml(item.notes)}</p>` : ''}
+      </div>
+      <div class="meal-queue-item-actions">
+        <button class="secondary small-btn" type="button" data-schedule-queue-item="${escapeAttr(item._id)}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>Plan</span></button>
+        <button class="ghost small-btn meal-queue-remove" type="button" data-delete-queue-item="${escapeAttr(item._id)}" aria-label="Remove ${escapeAttr(item.name)} from meal queue"><i class="ti ti-trash" aria-hidden="true"></i></button>
+      </div>
+    </article>
+  `;
+}
+
+function mealQueueMarkup() {
+  return `
+    <section class="card meal-queue-card" aria-labelledby="meal-queue-title">
+      <header class="meal-queue-header">
+        <div>
+          <h3 id="meal-queue-title">Meal Queue</h3>
+          <p class="muted">Save meal ideas for soon without assigning them to a day.</p>
+        </div>
+        <button class="primary small-btn" id="add-meal-queue-item" type="button"><i class="ti ti-plus" aria-hidden="true"></i>Add Meal</button>
+      </header>
+      <div class="meal-queue-list">
+        ${state.mealQueue.length
+          ? state.mealQueue.map(mealQueueItemMarkup).join('')
+          : '<div class="empty compact meal-queue-empty">No meal ideas queued yet.</div>'}
+      </div>
+    </section>
+  `;
+}
+
+function openMealQueueAddModal() {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.meal-queue-add-overlay')?.remove();
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay meal-queue-add-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card meal-queue-modal" role="dialog" aria-modal="true" aria-labelledby="meal-queue-add-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="meal-queue-add-title">Add To Meal Queue</h3>
+          <p class="muted">Choose a meal idea without selecting a date.</p>
+        </div>
+        <button class="small-btn modal-close-btn" type="button" data-close-meal-queue aria-label="Close meal queue form">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="meal-queue-add-form" class="calendar-meal-form">
+            <label>Meal Source
+              <select name="sourceType">
+                <option value="recipe">Recipe</option>
+                <option value="restaurant">Restaurant</option>
+                <option value="custom">Custom Idea</option>
+              </select>
+            </label>
+            <div class="source-field-expander open" data-queue-source-field="recipe">
+              <div class="source-field-inner">
+                <label>Recipe
+                  <select name="recipeId">
+                    <option value="">Select recipe</option>
+                    ${state.recipes.map(recipe => option(recipe._id, recipe.name, '')).join('')}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="source-field-expander" data-queue-source-field="restaurant">
+              <div class="source-field-inner">
+                <label>Restaurant
+                  <select name="restaurantId">
+                    <option value="">Select restaurant</option>
+                    ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, '')).join('')}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="source-field-expander" data-queue-source-field="custom">
+              <div class="source-field-inner">
+                <label>Meal Idea<input name="customName" maxlength="120" placeholder="Tacos, salmon bowls, breakfast for dinner…" /></label>
+              </div>
+            </div>
+            <label>Notes <span class="optional">optional</span><textarea name="notes" maxlength="500" placeholder="Use the chicken in the freezer, try a new sauce…"></textarea></label>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-meal-queue>Cancel</button>
+              <button class="primary" type="submit">Add To Queue</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+
+  const close = () => {
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+  const form = overlay.querySelector('#meal-queue-add-form');
+  const sourceSelect = form.querySelector('[name="sourceType"]');
+  const syncSource = () => {
+    form.querySelectorAll('[data-queue-source-field]').forEach(field => {
+      field.classList.toggle('open', field.dataset.queueSourceField === sourceSelect.value);
+    });
+  };
+  sourceSelect.addEventListener('change', syncSource);
+  overlay.querySelectorAll('[data-close-meal-queue]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('pointerdown', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    await withSaveFeedback(form, async () => {
+      const data = Object.fromEntries(new FormData(form));
+      const sourceId = data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null;
+      const name = data.sourceType === 'custom' ? String(data.customName || '').trim() : '';
+      if ((data.sourceType === 'recipe' || data.sourceType === 'restaurant') && !sourceId) {
+        throw new Error(`Select a ${data.sourceType}.`);
+      }
+      if (data.sourceType === 'custom' && !name) throw new Error('Enter a meal idea.');
+      await api('/api/meal-queue', {
+        method: 'POST',
+        body: { sourceType: data.sourceType, sourceId, name, notes: data.notes || '' }
+      });
+      await loadMealQueue();
+      close();
+      renderPlanner();
+    }, 'Meal added to the queue.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  sourceSelect.focus();
+}
+
+function openMealQueueScheduleModal(item) {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.meal-queue-schedule-overlay')?.remove();
+  const defaultMealType = 'dinner';
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay meal-queue-schedule-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card meal-queue-modal" role="dialog" aria-modal="true" aria-labelledby="meal-queue-schedule-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="meal-queue-schedule-title">Plan Queued Meal</h3>
+          <p class="muted">${escapeHtml(item.name)}</p>
+        </div>
+        <button class="small-btn modal-close-btn" type="button" data-close-queue-schedule aria-label="Close queued meal planner">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="meal-queue-schedule-form" class="calendar-meal-form">
+            <div class="form-grid compact-form-grid">
+              <label>Date<input name="date" type="date" required value="${dateISO(new Date())}" /></label>
+              <label>Meal
+                <select name="mealType">${mealTypes.map(type => option(type, titleCase(type), defaultMealType)).join('')}</select>
+              </label>
+              <label class="wide">Time<input name="time" type="time" value="${getDefaultMealTime(defaultMealType)}" /></label>
+            </div>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-queue-schedule>Cancel</button>
+              <button class="primary" type="submit">Add To Planner</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+  const close = () => {
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+  const form = overlay.querySelector('#meal-queue-schedule-form');
+  const mealTypeSelect = form.querySelector('[name="mealType"]');
+  const timeInput = form.querySelector('[name="time"]');
+  let manualTime = false;
+  timeInput.addEventListener('input', () => { manualTime = true; });
+  mealTypeSelect.addEventListener('change', () => {
+    if (!manualTime) timeInput.value = getDefaultMealTime(mealTypeSelect.value);
+  });
+  overlay.querySelectorAll('[data-close-queue-schedule]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('pointerdown', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    await withSaveFeedback(form, async () => {
+      const data = Object.fromEntries(new FormData(form));
+      await api('/api/planner/slot', {
+        method: 'PUT',
+        body: {
+          date: data.date,
+          mealType: data.mealType,
+          time: data.time || getDefaultMealTime(data.mealType),
+          sourceType: item.sourceType || 'custom',
+          sourceId: item.sourceId || null,
+          customName: item.name || '',
+          customProtein: '',
+          customSides: [],
+          status: 'planned',
+          notes: item.notes || ''
+        }
+      });
+      await api(`/api/meal-queue/${item._id}`, { method: 'DELETE' });
+      await Promise.all([loadMealQueue(), loadPlanner(), loadHistory(), loadStats(), loadRecipes(), loadRestaurants()]);
+      close();
+      renderPlanner();
+    }, 'Queued meal added to the planner.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  form.querySelector('[name="date"]')?.focus();
 }
 
 function renderPlanner() {
@@ -612,6 +851,7 @@ function renderPlanner() {
 
   pageRoot.innerHTML = `
     ${mobilePlannerView ? mobilePlannerDisplayOptions : desktopPlannerToolbar}
+    ${mealQueueMarkup()}
     ${groceryDisplay
       ? `<section class="planner-grocery-display" aria-label="Shared grocery list">${groceryViewMarkup({ embedded: true })}</section>`
       : `<section class="calendar-grid ${fullCalendar ? 'full-calendar-grid' : 'daily-planner-grid'}" aria-label="${fullCalendar ? 'Full meal calendar' : 'Daily meal planner'}">
@@ -619,6 +859,22 @@ function renderPlanner() {
           ${plannerDates.map(date => plannerDayCard(date, plansByDate[date] || [], fullCalendar)).join('')}
         </section>`}
   `;
+
+  $('#add-meal-queue-item')?.addEventListener('click', openMealQueueAddModal);
+  pageRoot.querySelectorAll('[data-schedule-queue-item]').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = state.mealQueue.find(queueItem => String(queueItem._id) === String(button.dataset.scheduleQueueItem));
+      if (item) openMealQueueScheduleModal(item);
+    });
+  });
+  pageRoot.querySelectorAll('[data-delete-queue-item]').forEach(button => {
+    button.addEventListener('click', async () => {
+      await api(`/api/meal-queue/${button.dataset.deleteQueueItem}`, { method: 'DELETE' });
+      await loadMealQueue();
+      showToast('Meal removed from the queue.');
+      renderPlanner();
+    });
+  });
 
   const plannerDisplayOptionsModal = $('#planner-display-options-modal');
   const openPlannerDisplayOptionsModal = () => {
@@ -1287,35 +1543,47 @@ function plannerMealItem(plan) {
   `;
 }
 
-function syncRecipeCookbookToolbar() {
-  const select = $('#recipe-cookbook-select');
-  if (!select) return;
-
-  const options = [
-    '<option value="all">Cookbooks</option>',
+function recipeCollectionOptionsMarkup() {
+  return [
+    '<option value="all">All Recipes</option>',
+    '<option value="want-to-try">Want to Try</option>',
     ...state.cookbooks.map(cookbook => `<option value="${escapeAttr(cookbook._id)}">${escapeHtml(cookbook.name)}</option>`)
-  ];
-  select.innerHTML = options.join('');
-  select.value = state.activeRecipeCookbookId;
-  if (!select.value) {
-    state.activeRecipeCookbookId = 'all';
-    select.value = 'all';
-  }
+  ].join('');
+}
+
+function syncRecipeCookbookToolbar() {
+  const selects = [...document.querySelectorAll('#recipe-cookbook-select, #desktop-recipe-cookbook-select')];
+  if (!selects.length) return;
+
+  selects.forEach(select => {
+    select.innerHTML = recipeCollectionOptionsMarkup();
+    select.value = state.activeRecipeCookbookId;
+    if (!select.value) {
+      state.activeRecipeCookbookId = 'all';
+      select.value = 'all';
+    }
+  });
 }
 
 function getActiveRecipeCookbook() {
-  if (state.activeRecipeCookbookId === 'all') return null;
+  if (['all', 'want-to-try'].includes(state.activeRecipeCookbookId)) return null;
   return state.cookbooks.find(cookbook => String(cookbook._id) === String(state.activeRecipeCookbookId)) || null;
 }
 
-function getVisibleMobileRecipes() {
+function getActiveRecipeCollectionLabel() {
+  if (state.activeRecipeCookbookId === 'want-to-try') return 'Want to Try';
+  return getActiveRecipeCookbook()?.name || 'All Recipes';
+}
+
+function getVisibleRecipes({ includeSearch = true } = {}) {
   const activeCookbook = getActiveRecipeCookbook();
   const cookbookRecipeIds = activeCookbook
     ? new Set((activeCookbook.recipeIds || []).map(recipeId => String(recipeId)))
     : null;
-  const query = String(state.recipeSearch || '').trim().toLowerCase();
+  const query = includeSearch ? String(state.recipeSearch || '').trim().toLowerCase() : '';
 
   const recipes = state.recipes.filter(recipe => {
+    if (state.activeRecipeCookbookId === 'want-to-try' && !recipe.wantToTry) return false;
     if (cookbookRecipeIds && !cookbookRecipeIds.has(String(recipe._id))) return false;
     if (!query) return true;
     const searchable = [
@@ -1328,6 +1596,8 @@ function getVisibleMobileRecipes() {
     return searchable.includes(query);
   });
 
+  if (!includeSearch) return recipes;
+
   return recipes.sort((a, b) => {
     if (state.recipeSort === 'name-desc') return String(b.name || '').localeCompare(String(a.name || ''));
     if (state.recipeSort === 'rating-desc') return (Number(b.rating) || 0) - (Number(a.rating) || 0) || String(a.name || '').localeCompare(String(b.name || ''));
@@ -1335,6 +1605,10 @@ function getVisibleMobileRecipes() {
     if (state.recipeSort === 'newest') return new Date(b.createdAt || b.updatedAt || 0) - new Date(a.createdAt || a.updatedAt || 0);
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
+}
+
+function getVisibleMobileRecipes() {
+  return getVisibleRecipes({ includeSearch: true });
 }
 
 function mobileRecipeActionMenuPanel(recipe, { includeEdit = false } = {}) {
@@ -1350,6 +1624,10 @@ function mobileRecipeActionMenuPanel(recipe, { includeEdit = false } = {}) {
       <button type="button" role="menuitem" data-toggle-recipe-favorite="${escapeAttr(recipeId)}">
         <i class="ti ${recipe.favorite ? 'ti-heart-off' : 'ti-heart'}" aria-hidden="true"></i>
         <span>${recipe.favorite ? 'Remove Favorite' : 'Favorite'}</span>
+      </button>
+      <button type="button" role="menuitem" data-toggle-recipe-want-to-try="${escapeAttr(recipeId)}">
+        <i class="ti ${recipe.wantToTry ? 'ti-check' : 'ti-test-pipe'}" aria-hidden="true"></i>
+        <span>${recipe.wantToTry ? 'Mark as Tried' : 'Want to Try'}</span>
       </button>
       <button type="button" role="menuitem" data-move-recipe="${escapeAttr(recipeId)}">
         <i class="ti ti-books" aria-hidden="true"></i>
@@ -1398,6 +1676,7 @@ function mobileRecipeCard(recipe) {
       <div class="mobile-recipe-card-badges">
         ${mealTypes.map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
+        ${recipe.wantToTry ? '<span class="badge recipe-want-to-try-badge">Want to Try</span>' : ''}
       </div>
       <p class="mobile-recipe-card-time">${formatDurationMinutes(recipe.prepTime || 0)} prep · ${formatDurationMinutes(recipe.cookTime || 0)} cook</p>
       ${ingredientPreview.length ? `<p class="mobile-recipe-card-preview">${ingredientPreview.map(escapeHtml).join(', ')}${(recipe.ingredients || []).length > 3 ? '…' : ''}</p>` : '<p class="mobile-recipe-card-preview muted">No ingredients listed.</p>'}
@@ -1435,6 +1714,7 @@ function mobileRecipeDetailPage(recipe) {
               ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
               ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
               ${recipe.difficulty ? `<span class="badge">${escapeHtml(recipe.difficulty)}</span>` : ''}
+              ${recipe.wantToTry ? '<span class="badge recipe-want-to-try-badge">Want to Try</span>' : ''}
             </div>
           </div>
           ${mobileRecipeActionMenu(recipe, { detail: true })}
@@ -1492,14 +1772,13 @@ function renderMobileRecipeResults() {
   if (!grid) return;
 
   const recipes = getVisibleMobileRecipes();
-  const activeCookbook = getActiveRecipeCookbook();
+  const collectionLabel = getActiveRecipeCollectionLabel();
   grid.innerHTML = recipes.length
     ? recipes.map(mobileRecipeCard).join('')
-    : `<div class="mobile-recipe-empty"><i class="ti ti-books"></i><strong>No recipes found</strong><span>${activeCookbook ? `Add recipes to ${escapeHtml(activeCookbook.name)} or change the search.` : 'Import a recipe or change the search.'}</span></div>`;
+    : `<div class="mobile-recipe-empty"><i class="ti ti-books"></i><strong>No recipes found</strong><span>${state.activeRecipeCookbookId === 'want-to-try' ? 'Mark a recipe as Want to Try to save it here.' : getActiveRecipeCookbook() ? `Add recipes to ${escapeHtml(collectionLabel)} or change the search.` : 'Import a recipe or change the search.'}</span></div>`;
 
   if (count) {
-    const label = activeCookbook?.name || 'All recipes';
-    count.textContent = `${label} · ${recipes.length} recipe${recipes.length === 1 ? '' : 's'}`;
+    count.textContent = `${collectionLabel} · ${recipes.length} recipe${recipes.length === 1 ? '' : 's'}`;
   }
   bindRecipeListActions(grid);
 }
@@ -1557,6 +1836,19 @@ function bindMobileRecipeActionItems(root) {
       await loadRecipes();
       renderRecipes();
       showToast(recipe.favorite ? 'Removed from favorites.' : 'Recipe favorited.');
+    });
+  });
+
+  root.querySelectorAll('[data-toggle-recipe-want-to-try]').forEach(button => {
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.toggleRecipeWantToTry));
+      if (!recipe) return;
+      closeMobileRecipeActionMenus();
+      await api(`/api/recipes/${recipe._id}/organize`, { method: 'PATCH', body: { wantToTry: !recipe.wantToTry } });
+      await loadRecipes();
+      renderRecipes();
+      showToast(recipe.wantToTry ? 'Recipe marked as tried.' : 'Saved to Want to Try.');
     });
   });
 
@@ -1739,7 +2031,10 @@ function openRecipeEditModal(recipe) {
               <label>Rating<select name="rating">${recipeRatingOptions(recipe.rating || 3)}</select></label>
               <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" rows="9">${escapeHtml(ingredientsText)}</textarea></label>
               <label class="wide">Instructions<textarea name="instructions">${escapeHtml(recipe.instructions || '')}</textarea></label>
-              <label class="wide checkbox-line"><input type="checkbox" name="favorite" ${recipe.favorite ? 'checked' : ''} /> Favorite</label>
+              <div class="wide recipe-form-flags">
+                <label class="checkbox-line"><input type="checkbox" name="favorite" ${recipe.favorite ? 'checked' : ''} /> Favorite</label>
+                <label class="checkbox-line"><input type="checkbox" name="wantToTry" ${recipe.wantToTry ? 'checked' : ''} /> Want to Try</label>
+              </div>
             </div>
             <div class="modal-actions action-row">
               <button class="secondary" type="button" data-close-recipe-edit>Cancel</button>
@@ -1773,6 +2068,7 @@ function openRecipeEditModal(recipe) {
       delete body.editPrepHours;
       delete body.editPrepMinutes;
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      body.wantToTry = getFormCheckboxChecked(formElement, 'wantToTry');
       body.originalScan = recipe.originalScan || '';
       body.originalScanName = recipe.originalScanName || '';
       body.importSource = recipe.importSource || '';
@@ -1856,6 +2152,7 @@ function openRecipeTagsModal(recipe) {
 }
 function renderRecipes() {
   const visibleMobileRecipes = getVisibleMobileRecipes();
+  const visibleDesktopRecipes = getVisibleRecipes({ includeSearch: false });
   let mobileRecipeDetail = state.mobileRecipeDetailId
     ? state.recipes.find(recipe => String(recipe._id) === String(state.mobileRecipeDetailId))
     : null;
@@ -1888,14 +2185,28 @@ function renderRecipes() {
           <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
           <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
           <label class="wide">Instructions<textarea name="instructions" placeholder="Cook steps"></textarea></label>
-          <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+          <div class="wide recipe-form-flags">
+            <label class="checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+            <label class="checkbox-line"><input type="checkbox" name="wantToTry" /> Want to Try</label>
+          </div>
         </div>
         <button class="primary full" type="submit">Save Recipe</button>
       </form>
-      <article class="card">
-        <h3>Recipe Library</h3>
-        <p class="muted">${state.recipes.length} saved recipe${state.recipes.length === 1 ? '' : 's'}.</p>
-        <div class="list">${state.recipes.length ? state.recipes.map(recipeItem).join('') : '<div class="empty">Add your first recipe to start planning meals.</div>'}</div>
+      <article class="card desktop-recipe-library">
+        <header class="desktop-recipe-library-header">
+          <div>
+            <h3>Recipe Library</h3>
+            <p class="muted">${getActiveRecipeCollectionLabel()} · ${visibleDesktopRecipes.length} recipe${visibleDesktopRecipes.length === 1 ? '' : 's'}.</p>
+          </div>
+          <div class="desktop-recipe-cookbook-controls">
+            <label>
+              <span class="visually-hidden">Select cookbook or recipe list</span>
+              <select id="desktop-recipe-cookbook-select" aria-label="Select cookbook or recipe list">${recipeCollectionOptionsMarkup()}</select>
+            </label>
+            <button class="secondary small-btn" id="desktop-manage-recipe-cookbooks" type="button"><i class="ti ti-books" aria-hidden="true"></i>Manage Cookbooks</button>
+          </div>
+        </header>
+        <div class="list">${visibleDesktopRecipes.length ? visibleDesktopRecipes.map(recipeItem).join('') : `<div class="empty">${state.activeRecipeCookbookId === 'want-to-try' ? 'Mark a recipe as Want to Try to save it here.' : 'No recipes are saved in this cookbook.'}</div>`}</div>
       </article>
     </section>
 
@@ -1921,7 +2232,7 @@ function renderRecipes() {
         </div>
         <button class="primary mobile-recipe-import-button" id="mobile-open-recipe-import" type="button"><i class="ti ti-camera"></i>Import Recipe</button>
         <div class="mobile-recipe-list-meta">
-          <span data-mobile-recipe-count>${getActiveRecipeCookbook()?.name || 'All recipes'} · ${visibleMobileRecipes.length} recipe${visibleMobileRecipes.length === 1 ? '' : 's'}</span>
+          <span data-mobile-recipe-count>${getActiveRecipeCollectionLabel()} · ${visibleMobileRecipes.length} recipe${visibleMobileRecipes.length === 1 ? '' : 's'}</span>
         </div>
         <div class="mobile-recipe-grid">
           ${visibleMobileRecipes.length ? visibleMobileRecipes.map(mobileRecipeCard).join('') : '<div class="mobile-recipe-empty"><i class="ti ti-books"></i><strong>No recipes found</strong><span>Import a recipe or change the search.</span></div>'}
@@ -1931,6 +2242,12 @@ function renderRecipes() {
   `;
 
   if (!mobileRecipeDetail) syncRecipeCookbookToolbar();
+  $('#desktop-recipe-cookbook-select')?.addEventListener('change', event => {
+    state.activeRecipeCookbookId = event.currentTarget.value || 'all';
+    localStorage.setItem('mealPlannerActiveCookbook', state.activeRecipeCookbookId);
+    renderRecipes();
+  });
+  $('#desktop-manage-recipe-cookbooks')?.addEventListener('click', openRecipeCookbookManager);
   $('#mobile-recipe-detail-back')?.addEventListener('click', closeMobileRecipeDetail);
   $('#open-recipe-import')?.addEventListener('click', openRecipeImportModal);
   $('#mobile-open-recipe-import')?.addEventListener('click', openRecipeImportModal);
@@ -1955,6 +2272,7 @@ function renderRecipes() {
       delete body.prepHours;
       delete body.prepMinutes;
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+      body.wantToTry = getFormCheckboxChecked(formElement, 'wantToTry');
       await api('/api/recipes', { method: 'POST', body });
       formElement.reset();
       await Promise.all([loadRecipes(), loadSuggestions({ mealType: 'dinner' }), loadStats()]);
@@ -2038,7 +2356,7 @@ function openRecipeCookbookManager() {
         await loadCookbooks();
         syncRecipeCookbookToolbar();
         renderList();
-        renderMobileRecipeResults();
+        renderRecipes();
         showToast('Cookbook renamed.');
       } catch (error) {
         button.disabled = false;
@@ -2074,7 +2392,7 @@ function openRecipeCookbookManager() {
         await loadCookbooks();
         syncRecipeCookbookToolbar();
         renderList();
-        renderMobileRecipeResults();
+        renderRecipes();
         showToast('Cookbook deleted.');
       });
     });
@@ -2099,7 +2417,7 @@ function openRecipeCookbookManager() {
     await loadCookbooks();
     syncRecipeCookbookToolbar();
     renderList();
-    renderMobileRecipeResults();
+    renderRecipes();
     showToast('Cookbook created.');
   });
 
@@ -2303,7 +2621,10 @@ function openRecipeImportModal() {
               <label class="wide recipe-import-autogrow-field recipe-import-ingredients-field">Ingredients<textarea name="ingredientsText" rows="1" data-recipe-import-autogrow placeholder="One ingredient per line" autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
               <label class="wide recipe-import-autogrow-field">Instructions<textarea name="instructions" rows="1" data-recipe-import-autogrow placeholder="Recipe steps" autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
               <label class="wide recipe-import-autogrow-field">Notes<textarea name="importNotes" rows="1" data-recipe-import-autogrow placeholder="Binder page, handwritten note, source, servings, temperature, etc." autocomplete="off" autocapitalize="sentences" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true"></textarea></label>
-              <label class="wide checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+              <div class="wide recipe-form-flags">
+                <label class="checkbox-line"><input type="checkbox" name="favorite" /> Favorite</label>
+                <label class="checkbox-line"><input type="checkbox" name="wantToTry" /> Want to Try</label>
+              </div>
             </div>
             <div class="modal-actions action-row recipe-import-save-actions recipe-import-save-cancel-row recipe-import-inline-buttons recipe-import-scan-dependent hidden">
               <button class="primary" type="submit" data-recipe-import-save>Save</button>
@@ -2739,6 +3060,7 @@ async function saveImportedRecipe(event) {
     delete body.importPrepHours;
     delete body.importPrepMinutes;
     body.favorite = getFormCheckboxChecked(formElement, 'favorite');
+    body.wantToTry = getFormCheckboxChecked(formElement, 'wantToTry');
     body.originalScan = recipeImportScan.dataUrl;
     body.originalScanName = recipeImportScan.name;
     body.importSource = recipeImportSourceType === 'url' ? 'url' : 'printed';
@@ -4063,14 +4385,18 @@ function recipeItem(recipe) {
       <div class="list-title">
         <strong>${escapeHtml(recipe.name)}</strong>
         <span class="item-actions">
+          <button class="secondary small-btn" type="button" data-edit-mobile-recipe="${recipe._id}">Edit</button>
+          <button class="secondary small-btn" type="button" data-organize-recipe="${recipe._id}">Cookbook</button>
+          <button class="secondary small-btn" type="button" data-toggle-recipe-want-to-try="${recipe._id}">${recipe.wantToTry ? 'Mark Tried' : 'Want to Try'}</button>
           ${recipe.originalScan ? `<button class="small-btn" type="button" data-view-recipe-scan="${recipe._id}">View Scan</button>` : ''}
-          <button class="danger small-btn" data-delete-recipe="${recipe._id}">Delete</button>
+          <button class="danger small-btn" type="button" data-delete-recipe="${recipe._id}">Delete</button>
         </span>
       </div>
       <div class="badge-row">
         ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
         ${recipe.cuisine ? `<span class="badge">${escapeHtml(recipe.cuisine)}</span>` : ''}
         ${recipe.favorite ? '<span class="badge good">favorite</span>' : ''}
+        ${recipe.wantToTry ? '<span class="badge recipe-want-to-try-badge">want to try</span>' : ''}
         ${recipe.importSource === 'printed' ? '<span class="badge">printed import</span>' : ''}
         ${recipe.aiCleaned ? `<span class="badge accent" title="AI confidence ${Math.round((Number(recipe.aiConfidence) || 0) * 100)}%">AI cleaned</span>` : ''}
         ${recipe.originalScan ? '<span class="badge">scan saved</span>' : ''}
