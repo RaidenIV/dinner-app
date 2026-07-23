@@ -32,6 +32,7 @@ const state = {
   customMealFavorites: [],
   savedSides: [],
   mealQueue: [],
+  openMealQueueMenuId: '',
   planner: { dates: [], plans: [] },
   grocery: [],
   history: [],
@@ -46,6 +47,7 @@ const state = {
   openPlannerMealMenuId: '',
   mobileRecipeDetailId: '',
   openMobileRecipeMenuId: '',
+  openDesktopRecipeMenuId: '',
   socket: null,
   realtimeRefreshTimer: null,
   realtimeRefreshInFlight: false,
@@ -184,13 +186,22 @@ function bindShell() {
       shouldRenderRestaurants = state.page === 'restaurants';
     }
 
+    if (state.openMealQueueMenuId && !event.target.closest('.meal-queue-menu-wrap, [data-meal-queue-menu], .meal-queue-action-menu')) {
+      state.openMealQueueMenuId = '';
+      shouldRenderPlanner = state.page === 'planner';
+    }
+
     if (shouldRenderPlanner) renderPlanner();
     if (shouldRenderRestaurants) renderRestaurants();
   }, true);
 
   document.addEventListener('click', event => {
-    if (!state.openMobileRecipeMenuId || event.target.closest('.mobile-recipe-menu-wrap')) return;
-    closeMobileRecipeActionMenus();
+    if (state.openMobileRecipeMenuId && !event.target.closest('.mobile-recipe-menu-wrap')) {
+      closeMobileRecipeActionMenus();
+    }
+    if (state.openDesktopRecipeMenuId && !event.target.closest('.desktop-recipe-menu-wrap')) {
+      closeDesktopRecipeActionMenus();
+    }
   });
 
 }
@@ -525,21 +536,20 @@ function renderDashboard() {
 
 
 function mealQueueItemMarkup(item) {
-  const sourceLabel = item.sourceType === 'recipe'
-    ? 'Recipe'
-    : item.sourceType === 'restaurant'
-      ? 'Restaurant'
-      : 'Meal Idea';
+  const itemId = String(item._id);
+  const isMenuOpen = String(state.openMealQueueMenuId) === itemId;
   return `
-    <article class="meal-queue-item">
-      <div class="meal-queue-item-copy">
-        <div class="badge-row"><span class="badge accent">${escapeHtml(sourceLabel)}</span></div>
-        <strong>${escapeHtml(item.name)}</strong>
-        ${item.notes ? `<p class="muted">${escapeHtml(item.notes)}</p>` : ''}
-      </div>
-      <div class="meal-queue-item-actions">
-        <button class="secondary small-btn" type="button" data-schedule-queue-item="${escapeAttr(item._id)}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>Plan</span></button>
-        <button class="ghost small-btn meal-queue-remove" type="button" data-delete-queue-item="${escapeAttr(item._id)}" aria-label="Remove ${escapeAttr(item.name)} from meal queue"><i class="ti ti-trash" aria-hidden="true"></i></button>
+    <article class="meal-queue-item ${isMenuOpen ? 'menu-open' : ''}" data-meal-queue-item="${escapeAttr(itemId)}">
+      <strong class="meal-queue-item-name">${escapeHtml(item.name)}</strong>
+      <div class="meal-queue-menu-wrap">
+        <button class="meal-queue-kebab-btn" type="button" data-meal-queue-menu="${escapeAttr(itemId)}" aria-label="Meal queue actions for ${escapeAttr(item.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+          <i class="ti ti-dots-vertical" aria-hidden="true"></i>
+        </button>
+        <div class="meal-queue-action-menu ${isMenuOpen ? 'open' : ''}" role="menu">
+          <button type="button" role="menuitem" data-schedule-queue-item="${escapeAttr(itemId)}"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>Plan</span></button>
+          <button type="button" role="menuitem" data-edit-queue-item="${escapeAttr(itemId)}"><i class="ti ti-pencil" aria-hidden="true"></i><span>Edit</span></button>
+          <button class="danger-menu-item" type="button" role="menuitem" data-delete-queue-item="${escapeAttr(itemId)}"><i class="ti ti-trash" aria-hidden="true"></i><span>Delete</span></button>
+        </div>
       </div>
     </article>
   `;
@@ -662,6 +672,113 @@ function openMealQueueAddModal() {
       close();
       renderPlanner();
     }, 'Meal added to the queue.');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  sourceSelect.focus();
+}
+
+function openMealQueueEditModal(item) {
+  closeMobileWebSidebarForModal();
+  document.querySelector('.meal-queue-edit-overlay')?.remove();
+  const overlay = document.createElement('section');
+  overlay.className = 'time-modal-overlay meal-queue-edit-overlay';
+  overlay.innerHTML = `
+    <article class="time-modal-card meal-queue-modal" role="dialog" aria-modal="true" aria-labelledby="meal-queue-edit-title">
+      <header class="time-modal-header">
+        <div>
+          <h3 id="meal-queue-edit-title">Edit Queued Meal</h3>
+          <p class="muted">Update this meal idea without assigning it to a date.</p>
+        </div>
+        <button class="small-btn modal-close-btn" type="button" data-close-meal-queue-edit aria-label="Close meal queue editor">×</button>
+      </header>
+      <div class="time-modal-body">
+        <div class="time-modal-body-inner">
+          <form id="meal-queue-edit-form" class="calendar-meal-form">
+            <label>Meal Source
+              <select name="sourceType">
+                ${option('recipe', 'Recipe', item.sourceType)}
+                ${option('restaurant', 'Restaurant', item.sourceType)}
+                ${option('custom', 'Custom Idea', item.sourceType)}
+              </select>
+            </label>
+            <div class="source-field-expander ${item.sourceType === 'recipe' ? 'open' : ''}" data-queue-edit-source-field="recipe">
+              <div class="source-field-inner">
+                <label>Recipe
+                  <select name="recipeId">
+                    <option value="">Select recipe</option>
+                    ${state.recipes.map(recipe => option(recipe._id, recipe.name, item.sourceType === 'recipe' ? item.sourceId : '')).join('')}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="source-field-expander ${item.sourceType === 'restaurant' ? 'open' : ''}" data-queue-edit-source-field="restaurant">
+              <div class="source-field-inner">
+                <label>Restaurant
+                  <select name="restaurantId">
+                    <option value="">Select restaurant</option>
+                    ${state.restaurants.map(restaurant => option(restaurant._id, restaurant.name, item.sourceType === 'restaurant' ? item.sourceId : '')).join('')}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="source-field-expander ${item.sourceType === 'custom' ? 'open' : ''}" data-queue-edit-source-field="custom">
+              <div class="source-field-inner">
+                <label>Meal Idea<input name="customName" maxlength="120" value="${escapeAttr(item.sourceType === 'custom' ? item.name : '')}" placeholder="Tacos, salmon bowls, breakfast for dinner…" /></label>
+              </div>
+            </div>
+            <label>Notes <span class="optional">optional</span><textarea name="notes" maxlength="500" placeholder="Use the chicken in the freezer, try a new sauce…">${escapeHtml(item.notes || '')}</textarea></label>
+            <div class="modal-actions action-row">
+              <button class="secondary" type="button" data-close-meal-queue-edit>Cancel</button>
+              <button class="primary" type="submit">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </article>
+  `;
+
+  const close = () => {
+    overlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
+    window.setTimeout(() => overlay.remove(), 190);
+  };
+  const form = overlay.querySelector('#meal-queue-edit-form');
+  const sourceSelect = form.querySelector('[name="sourceType"]');
+  const syncSource = () => {
+    form.querySelectorAll('[data-queue-edit-source-field]').forEach(field => {
+      field.classList.toggle('open', field.dataset.queueEditSourceField === sourceSelect.value);
+    });
+  };
+  sourceSelect.addEventListener('change', syncSource);
+  overlay.querySelectorAll('[data-close-meal-queue-edit]').forEach(button => button.addEventListener('click', close));
+  overlay.addEventListener('pointerdown', event => {
+    if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') close();
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    await withSaveFeedback(form, async () => {
+      const data = Object.fromEntries(new FormData(form));
+      const sourceId = data.sourceType === 'recipe' ? data.recipeId : data.sourceType === 'restaurant' ? data.restaurantId : null;
+      const name = data.sourceType === 'custom' ? String(data.customName || '').trim() : '';
+      if ((data.sourceType === 'recipe' || data.sourceType === 'restaurant') && !sourceId) {
+        throw new Error(`Select a ${data.sourceType}.`);
+      }
+      if (data.sourceType === 'custom' && !name) throw new Error('Enter a meal idea.');
+      await api(`/api/meal-queue/${item._id}`, {
+        method: 'PUT',
+        body: { sourceType: data.sourceType, sourceId, name, notes: data.notes || '' }
+      });
+      await loadMealQueue();
+      state.openMealQueueMenuId = '';
+      close();
+      renderPlanner();
+    }, 'Queued meal updated.');
   });
 
   document.body.appendChild(overlay);
@@ -861,15 +978,35 @@ function renderPlanner() {
   `;
 
   $('#add-meal-queue-item')?.addEventListener('click', openMealQueueAddModal);
+  pageRoot.querySelectorAll('[data-meal-queue-menu]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const itemId = String(button.dataset.mealQueueMenu || '');
+      state.openMealQueueMenuId = String(state.openMealQueueMenuId) === itemId ? '' : itemId;
+      renderPlanner();
+    });
+  });
   pageRoot.querySelectorAll('[data-schedule-queue-item]').forEach(button => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
       const item = state.mealQueue.find(queueItem => String(queueItem._id) === String(button.dataset.scheduleQueueItem));
+      state.openMealQueueMenuId = '';
       if (item) openMealQueueScheduleModal(item);
     });
   });
+  pageRoot.querySelectorAll('[data-edit-queue-item]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const item = state.mealQueue.find(queueItem => String(queueItem._id) === String(button.dataset.editQueueItem));
+      state.openMealQueueMenuId = '';
+      if (item) openMealQueueEditModal(item);
+    });
+  });
   pageRoot.querySelectorAll('[data-delete-queue-item]').forEach(button => {
-    button.addEventListener('click', async () => {
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
       await api(`/api/meal-queue/${button.dataset.deleteQueueItem}`, { method: 'DELETE' });
+      state.openMealQueueMenuId = '';
       await loadMealQueue();
       showToast('Meal removed from the queue.');
       renderPlanner();
@@ -1611,6 +1748,26 @@ function getVisibleMobileRecipes() {
   return getVisibleRecipes({ includeSearch: true });
 }
 
+function recipeDurationFieldMarkup(label, prefix, totalMinutes = 0) {
+  const total = Math.max(0, Math.round(Number(totalMinutes) || 0));
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  return `
+    <label class="recipe-duration-field">${escapeHtml(label)}
+      <span class="recipe-duration-inputs" aria-label="${escapeAttr(label)} duration">
+        <span class="recipe-duration-part">
+          <input name="${escapeAttr(prefix)}Hours" type="number" inputmode="numeric" min="0" max="99" step="1" value="${escapeAttr(hours)}" aria-label="${escapeAttr(label)} hours" />
+          <span aria-hidden="true">hr</span>
+        </span>
+        <span class="recipe-duration-part">
+          <input name="${escapeAttr(prefix)}Minutes" type="number" inputmode="numeric" min="0" max="59" step="1" value="${escapeAttr(minutes)}" aria-label="${escapeAttr(label)} minutes" />
+          <span aria-hidden="true">min</span>
+        </span>
+      </span>
+    </label>
+  `;
+}
+
 function mobileRecipeActionMenuPanel(recipe, { includeEdit = false } = {}) {
   const recipeId = String(recipe._id);
   return `
@@ -1795,6 +1952,7 @@ function bindMobileRecipeActionItems(root) {
       event.stopPropagation();
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.editMobileRecipe));
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       if (recipe) openRecipeEditModal(recipe);
     });
   });
@@ -1803,6 +1961,8 @@ function bindMobileRecipeActionItems(root) {
     button.addEventListener('click', event => {
       event.stopPropagation();
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.viewRecipeScan));
+      closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       openRecipeScan(recipe);
     });
   });
@@ -1813,6 +1973,7 @@ function bindMobileRecipeActionItems(root) {
       const recipeId = button.dataset.moveRecipe || button.dataset.organizeRecipe;
       const recipe = state.recipes.find(item => String(item._id) === String(recipeId));
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       if (recipe) openRecipeCookbookAssignment(recipe);
     });
   });
@@ -1822,6 +1983,7 @@ function bindMobileRecipeActionItems(root) {
       event.stopPropagation();
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.addRecipeTags));
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       if (recipe) openRecipeTagsModal(recipe);
     });
   });
@@ -1832,6 +1994,7 @@ function bindMobileRecipeActionItems(root) {
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.toggleRecipeFavorite));
       if (!recipe) return;
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       await api(`/api/recipes/${recipe._id}/organize`, { method: 'PATCH', body: { favorite: !recipe.favorite } });
       await loadRecipes();
       renderRecipes();
@@ -1845,6 +2008,7 @@ function bindMobileRecipeActionItems(root) {
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.toggleRecipeWantToTry));
       if (!recipe) return;
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       await api(`/api/recipes/${recipe._id}/organize`, { method: 'PATCH', body: { wantToTry: !recipe.wantToTry } });
       await loadRecipes();
       renderRecipes();
@@ -1857,6 +2021,7 @@ function bindMobileRecipeActionItems(root) {
       event.stopPropagation();
       const recipe = state.recipes.find(item => String(item._id) === String(button.dataset.deleteMobileRecipe));
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       if (recipe) openDeleteRecipeConfirmation(recipe);
     });
   });
@@ -1893,12 +2058,30 @@ function bindRecipeListActions(root = pageRoot) {
       const recipe = state.recipes.find(item => String(item._id) === recipeId);
       const shouldOpen = state.openMobileRecipeMenuId !== recipeId;
       closeMobileRecipeActionMenus();
+      closeDesktopRecipeActionMenus();
       if (!shouldOpen || !recipe) return;
 
       state.openMobileRecipeMenuId = recipeId;
       button.setAttribute('aria-expanded', 'true');
       const includeEdit = Boolean(button.closest('.mobile-recipe-detail-menu-wrap'));
       button.insertAdjacentHTML('afterend', mobileRecipeActionMenuPanel(recipe, { includeEdit }));
+      bindMobileRecipeActionItems(button.parentElement);
+    });
+  });
+
+  root.querySelectorAll('[data-desktop-recipe-menu]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const recipeId = String(button.dataset.desktopRecipeMenu || '');
+      const recipe = state.recipes.find(item => String(item._id) === recipeId);
+      const shouldOpen = state.openDesktopRecipeMenuId !== recipeId;
+      closeDesktopRecipeActionMenus();
+      closeMobileRecipeActionMenus();
+      if (!shouldOpen || !recipe) return;
+
+      state.openDesktopRecipeMenuId = recipeId;
+      button.setAttribute('aria-expanded', 'true');
+      button.insertAdjacentHTML('afterend', desktopRecipeActionMenuPanel(recipe));
       bindMobileRecipeActionItems(button.parentElement);
     });
   });
@@ -1982,9 +2165,6 @@ function openRecipeEditModal(recipe) {
   closeMobileWebSidebarForModal();
   document.querySelector('.recipe-edit-overlay')?.remove();
 
-  const prepTime = Math.max(0, Math.round(Number(recipe.prepTime) || 0));
-  const prepHours = String(Math.floor(prepTime / 60)).padStart(2, '0');
-  const prepMinutes = String(prepTime % 60).padStart(2, '0');
   const ingredientsText = (recipe.ingredients || [])
     .map(ingredient => [
       ingredient.quantity || '',
@@ -2013,14 +2193,8 @@ function openRecipeEditModal(recipe) {
               <label>Cuisine<input name="cuisine" value="${escapeAttr(recipe.cuisine || '')}" placeholder="American, Mexican, Italian" /></label>
               <label>Meal Types<input name="mealTypes" value="${escapeAttr((recipe.mealTypes || []).join(', '))}" placeholder="dinner, lunch" /></label>
               <label>Tags<input name="tags" value="${escapeAttr((recipe.tags || []).join(', '))}" placeholder="quick, cheap, healthy" /></label>
-              <label>Prep Time
-                <span class="duration-clock" aria-label="Prep time duration">
-                  <input name="editPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepHours)}" aria-label="Prep time hours" />
-                  <span class="duration-separator" aria-hidden="true">:</span>
-                  <input name="editPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${escapeAttr(prepMinutes)}" aria-label="Prep time minutes" />
-                </span>
-              </label>
-              <label>Cook Time<input name="cookTime" type="number" min="0" value="${escapeAttr(recipe.cookTime || 0)}" /></label>
+              ${recipeDurationFieldMarkup('Prep Time', 'editPrep', recipe.prepTime || 0)}
+              ${recipeDurationFieldMarkup('Cook Time', 'editCook', recipe.cookTime || 0)}
               <label>Difficulty
                 <select name="difficulty">
                   ${option('easy', 'Easy', recipe.difficulty || 'easy')}
@@ -2065,8 +2239,11 @@ function openRecipeEditModal(recipe) {
     await withSaveFeedback(formElement, async () => {
       const body = formToBody(formElement);
       body.prepTime = durationInputsToMinutes(formElement, 'editPrep');
+      body.cookTime = durationInputsToMinutes(formElement, 'editCook');
       delete body.editPrepHours;
       delete body.editPrepMinutes;
+      delete body.editCookHours;
+      delete body.editCookMinutes;
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
       body.wantToTry = getFormCheckboxChecked(formElement, 'wantToTry');
       body.originalScan = recipe.originalScan || '';
@@ -2173,14 +2350,8 @@ function renderRecipes() {
           <label>Cuisine<input name="cuisine" placeholder="American, Mexican, Italian" /></label>
           <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" /></label>
           <label>Tags<input name="tags" placeholder="quick, cheap, healthy" /></label>
-          <label>Prep Time
-            <span class="duration-clock" aria-label="Prep time duration">
-              <input name="prepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
-              <span class="duration-separator" aria-hidden="true">:</span>
-              <input name="prepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
-            </span>
-          </label>
-          <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+          ${recipeDurationFieldMarkup('Prep Time', 'prep', 10)}
+          ${recipeDurationFieldMarkup('Cook Time', 'cook', 25)}
           <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
           <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
           <label class="wide">Ingredients <span class="optional">one per line, or quantity | unit | name | category</span><textarea name="ingredientsText" placeholder="2 | lb | chicken thighs | Meat&#10;1 | tsp | smoked paprika | Pantry"></textarea></label>
@@ -2269,8 +2440,11 @@ function renderRecipes() {
     await withSaveFeedback(formElement, async () => {
       const body = formToBody(formElement);
       body.prepTime = durationInputsToMinutes(formElement, 'prep');
+      body.cookTime = durationInputsToMinutes(formElement, 'cook');
       delete body.prepHours;
       delete body.prepMinutes;
+      delete body.cookHours;
+      delete body.cookMinutes;
       body.favorite = getFormCheckboxChecked(formElement, 'favorite');
       body.wantToTry = getFormCheckboxChecked(formElement, 'wantToTry');
       await api('/api/recipes', { method: 'POST', body });
@@ -2607,14 +2781,8 @@ function openRecipeImportModal() {
               <label>Meal Types<input name="mealTypes" placeholder="dinner, lunch" value="dinner" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" /></label>
               <label>Tags<input name="tags" placeholder="family favorite, binder, comfort food" value="printed, family" autocomplete="off" autocapitalize="none" autocorrect="on" spellcheck="true" data-lpignore="true" data-1p-ignore="true" /></label>
               <div class="recipe-import-time-row wide">
-                <label>Prep Time
-                  <span class="duration-clock" aria-label="Prep time duration">
-                    <input name="importPrepHours" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="00" aria-label="Prep time hours" />
-                    <span class="duration-separator" aria-hidden="true">:</span>
-                    <input name="importPrepMinutes" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="10" aria-label="Prep time minutes" />
-                  </span>
-                </label>
-                <label>Cook Time<input name="cookTime" type="number" min="0" value="25" /></label>
+                ${recipeDurationFieldMarkup('Prep Time', 'importPrep', 10)}
+                ${recipeDurationFieldMarkup('Cook Time', 'importCook', 25)}
               </div>
               <label>Difficulty<select name="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
               <label>Rating<select name="rating">${recipeRatingOptions()}</select></label>
@@ -3026,7 +3194,7 @@ function fillRecipeImportFromText(form, { automatic = false } = {}) {
     form.elements.importNotes.value = [parsed.notes, existingSourceUrl].filter(Boolean).join('\n');
   }
   if (parsed.prepTime) setDurationInputs(form, 'importPrep', parsed.prepTime);
-  if (parsed.cookTime && form.elements.cookTime) form.elements.cookTime.value = parsed.cookTime;
+  if (parsed.cookTime) setDurationInputs(form, 'importCook', parsed.cookTime);
 
   resizeRecipeImportTextareas(form);
   const populatedSections = [parsed.ingredientsText, parsed.instructions, parsed.notes].filter(Boolean).length;
@@ -3057,8 +3225,11 @@ async function saveImportedRecipe(event) {
     delete body.recipeUrl;
     delete body.importText;
     body.prepTime = durationInputsToMinutes(formElement, 'importPrep');
+    body.cookTime = durationInputsToMinutes(formElement, 'importCook');
     delete body.importPrepHours;
     delete body.importPrepMinutes;
+    delete body.importCookHours;
+    delete body.importCookMinutes;
     body.favorite = getFormCheckboxChecked(formElement, 'favorite');
     body.wantToTry = getFormCheckboxChecked(formElement, 'wantToTry');
     body.originalScan = recipeImportScan.dataUrl;
@@ -3220,7 +3391,7 @@ function applyAiRecipeDraftToForm(form, draft) {
   if (form.elements.mealTypes) form.elements.mealTypes.value = (draft.mealTypes || []).join(', ') || 'dinner';
   if (form.elements.tags) form.elements.tags.value = (draft.tags || []).join(', ');
   setDurationInputs(form, 'importPrep', draft.prepTimeMinutes || 0);
-  if (form.elements.cookTime) form.elements.cookTime.value = String(Math.max(0, Math.round(Number(draft.cookTimeMinutes) || 0)));
+  setDurationInputs(form, 'importCook', draft.cookTimeMinutes || 0);
   if (form.elements.difficulty) form.elements.difficulty.value = String(draft.difficulty || 'Easy').toLowerCase();
 
   if (form.elements.ingredientsText) {
@@ -3536,8 +3707,8 @@ function setDurationInputs(form, prefix, totalMinutes) {
   const total = Math.max(0, Math.round(Number(totalMinutes) || 0));
   const hoursInput = form.querySelector(`[name="${prefix}Hours"]`);
   const minutesInput = form.querySelector(`[name="${prefix}Minutes"]`);
-  if (hoursInput) hoursInput.value = String(Math.floor(total / 60)).padStart(2, '0');
-  if (minutesInput) minutesInput.value = String(total % 60).padStart(2, '0');
+  if (hoursInput) hoursInput.value = String(Math.min(99, Math.floor(total / 60)));
+  if (minutesInput) minutesInput.value = String(total % 60);
 }
 
 function titleFromFileName(fileName) {
@@ -4379,18 +4550,45 @@ function suggestionItem(item) {
   return `<div class="list-item"><div class="list-title"><strong>${escapeHtml(item.name)}</strong><span class="badge accent">${item.type}</span></div><p class="muted">${escapeHtml(item.cuisine || 'Any cuisine')} • ${item.rating || 0}/5</p><p>${escapeHtml(item.reason)}</p></div>`;
 }
 
-function recipeItem(recipe) {
+function desktopRecipeActionMenuPanel(recipe) {
+  const recipeId = String(recipe._id);
   return `
-    <div class="list-item">
+    <div class="desktop-recipe-action-menu" role="menu">
+      <button type="button" role="menuitem" data-edit-mobile-recipe="${escapeAttr(recipeId)}"><i class="ti ti-pencil" aria-hidden="true"></i><span>Edit</span></button>
+      <button type="button" role="menuitem" data-organize-recipe="${escapeAttr(recipeId)}"><i class="ti ti-books" aria-hidden="true"></i><span>Cookbook</span></button>
+      <button type="button" role="menuitem" data-toggle-recipe-want-to-try="${escapeAttr(recipeId)}"><i class="ti ${recipe.wantToTry ? 'ti-check' : 'ti-test-pipe'}" aria-hidden="true"></i><span>${recipe.wantToTry ? 'Mark as Tried' : 'Want to Try'}</span></button>
+      ${recipe.originalScan ? `<button type="button" role="menuitem" data-view-recipe-scan="${escapeAttr(recipeId)}"><i class="ti ti-file-scan" aria-hidden="true"></i><span>View Scan</span></button>` : ''}
+      <button class="danger-menu-item" type="button" role="menuitem" data-delete-mobile-recipe="${escapeAttr(recipeId)}"><i class="ti ti-trash" aria-hidden="true"></i><span>Delete</span></button>
+    </div>
+  `;
+}
+
+function desktopRecipeActionMenu(recipe) {
+  const recipeId = String(recipe._id);
+  const isMenuOpen = String(state.openDesktopRecipeMenuId) === recipeId;
+  return `
+    <div class="desktop-recipe-menu-wrap">
+      <button class="desktop-recipe-kebab-btn" type="button" data-desktop-recipe-menu="${escapeAttr(recipeId)}" aria-label="Recipe actions for ${escapeAttr(recipe.name)}" aria-expanded="${isMenuOpen ? 'true' : 'false'}">
+        <i class="ti ti-dots-vertical" aria-hidden="true"></i>
+      </button>
+      ${isMenuOpen ? desktopRecipeActionMenuPanel(recipe) : ''}
+    </div>
+  `;
+}
+
+function closeDesktopRecipeActionMenus() {
+  state.openDesktopRecipeMenuId = '';
+  document.querySelectorAll('.desktop-recipe-action-menu').forEach(menu => menu.remove());
+  document.querySelectorAll('[data-desktop-recipe-menu]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+}
+
+function recipeItem(recipe) {
+  const isMenuOpen = String(state.openDesktopRecipeMenuId) === String(recipe._id);
+  return `
+    <div class="list-item desktop-recipe-item ${isMenuOpen ? 'menu-open' : ''}">
       <div class="list-title">
         <strong>${escapeHtml(recipe.name)}</strong>
-        <span class="item-actions">
-          <button class="secondary small-btn" type="button" data-edit-mobile-recipe="${recipe._id}">Edit</button>
-          <button class="secondary small-btn" type="button" data-organize-recipe="${recipe._id}">Cookbook</button>
-          <button class="secondary small-btn" type="button" data-toggle-recipe-want-to-try="${recipe._id}">${recipe.wantToTry ? 'Mark Tried' : 'Want to Try'}</button>
-          ${recipe.originalScan ? `<button class="small-btn" type="button" data-view-recipe-scan="${recipe._id}">View Scan</button>` : ''}
-          <button class="danger small-btn" type="button" data-delete-recipe="${recipe._id}">Delete</button>
-        </span>
+        ${desktopRecipeActionMenu(recipe)}
       </div>
       <div class="badge-row">
         ${(recipe.mealTypes || []).map(type => `<span class="badge accent">${escapeHtml(type)}</span>`).join('')}
@@ -4932,7 +5130,7 @@ function starRating(value) {
 function durationInputsToMinutes(form, prefix) {
   const hoursInput = form.querySelector(`[name="${prefix}Hours"]`);
   const minutesInput = form.querySelector(`[name="${prefix}Minutes"]`);
-  const hours = Math.max(0, parseInt(hoursInput?.value || '0', 10) || 0);
+  const hours = Math.max(0, Math.min(99, parseInt(hoursInput?.value || '0', 10) || 0));
   const minutes = Math.max(0, Math.min(59, parseInt(minutesInput?.value || '0', 10) || 0));
   return (hours * 60) + minutes;
 }

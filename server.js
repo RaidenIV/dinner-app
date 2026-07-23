@@ -1901,6 +1901,47 @@ app.post('/api/meal-queue', authenticate, async (req, res) => {
   }
 });
 
+app.put('/api/meal-queue/:id', authenticate, async (req, res) => {
+  try {
+    const sourceType = ['recipe', 'restaurant', 'custom'].includes(req.body.sourceType) ? req.body.sourceType : 'custom';
+    const sourceId = mongoose.Types.ObjectId.isValid(req.body.sourceId) ? req.body.sourceId : null;
+    let name = String(req.body.name || '').trim();
+    let verifiedSourceId = null;
+
+    if (sourceType === 'recipe') {
+      const recipe = sourceId ? await Recipe.findOne({ _id: sourceId, householdId: req.householdId }).select('name').lean() : null;
+      if (!recipe) return res.status(404).json({ error: 'Recipe not found.' });
+      name = recipe.name;
+      verifiedSourceId = recipe._id;
+    } else if (sourceType === 'restaurant') {
+      const restaurant = sourceId ? await Restaurant.findOne({ _id: sourceId, householdId: req.householdId }).select('name').lean() : null;
+      if (!restaurant) return res.status(404).json({ error: 'Restaurant not found.' });
+      name = restaurant.name;
+      verifiedSourceId = restaurant._id;
+    }
+
+    name = name.slice(0, 120);
+    if (!name) return res.status(400).json({ error: 'Choose or enter a meal.' });
+
+    const item = await MealQueueItem.findOneAndUpdate(
+      { _id: req.params.id, householdId: req.householdId },
+      {
+        name,
+        sourceType,
+        sourceId: verifiedSourceId,
+        notes: String(req.body.notes || '').trim().slice(0, 500)
+      },
+      { new: true, runValidators: true }
+    );
+    if (!item) return res.status(404).json({ error: 'Queued meal not found.' });
+
+    broadcastHouseholdUpdate(req, 'meal-queue:updated', { itemId: item._id.toString() });
+    res.json(item);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not update the queued meal.' });
+  }
+});
+
 app.delete('/api/meal-queue/:id', authenticate, async (req, res) => {
   const result = await MealQueueItem.deleteOne({ _id: req.params.id, householdId: req.householdId });
   if (!result.deletedCount) return res.status(404).json({ error: 'Queued meal not found.' });
